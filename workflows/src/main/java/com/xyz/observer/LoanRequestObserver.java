@@ -31,17 +31,10 @@ public class LoanRequestObserver {
         this.me = name;
     }
 
-    private static void logState(StateAndRef<LoanApplicationState> state) {
-        logger.info("{}", state.getState().getData());
-    }
-
     public void observeLoanApplicationUpdate() {
         try {
             final DataFeed<Vault.Page<LoanApplicationState>, Vault.Update<LoanApplicationState>> loanStateDataFeed = proxy.vaultTrack(LoanApplicationState.class);
             final Observable<Vault.Update<LoanApplicationState>> loanUpdates = loanStateDataFeed.getUpdates();
-
-            final DataFeed<Vault.Page<CreditRatingState>, Vault.Update<CreditRatingState>> creditStateDataFeed = proxy.vaultTrack(CreditRatingState.class);
-            final Observable<Vault.Update<CreditRatingState>> creditUpdates = creditStateDataFeed.getUpdates();
 
             loanUpdates.toBlocking().subscribe(update -> update.getProduced().forEach(t -> {
 
@@ -58,25 +51,6 @@ public class LoanRequestObserver {
                     newThreadCreditCheckFlow.start();
                 }
             }));
-
-            creditUpdates.toBlocking().subscribe(update -> update.getProduced().forEach(t -> {
-                CreditRatingState creditApplicationState = t.getState().getData();
-
-                logger.info("Update in XYZ Node for Credit Application Id : " + creditApplicationState.getLoanVerificationId() + " Detected.");
-                final CreditScoreDesc creditDesc = creditApplicationState.getCreditScoreDesc();
-                final UniqueIdentifier creditApplicationId = creditApplicationState.getLoanVerificationId();
-
-                logger.info("Credit Application Status description : " + creditDesc.toString());
-
-                if (creditApplicationState.getCreditScoreDesc() != CreditScoreDesc.UNSPECIFIED) {
-                    logger.info("Received Credit rating, updating the loan application, for credit check Id  : " + creditApplicationId.toString());
-                    Thread newThreadCreditCheckFlow = new Thread(new UpdateLoanApplication(creditApplicationId, proxy, creditApplicationState.getCreditScoreDesc(),
-                            creditApplicationState.getCreditScoreCheckRating()));
-                    newThreadCreditCheckFlow.start();
-                }
-
-            }));
-
 
         } catch (Exception e) {
             logger.error("Exception occurred", e.getMessage());
@@ -113,36 +87,6 @@ class InitiateCreditCheckFlow implements Runnable {
             logger.info("Application status for the Loan application is updated with Secure Hash : " + loanUpdateTx.getId().toString());
         } catch (InterruptedException | ExecutionException e) {
             logger.error("Error while initiating CreditScoreCheckFlow for loanApplicationId : " + loanApplicationId.getId().toString());
-            e.printStackTrace();
-        }
-    }
-}
-
-
-class UpdateLoanApplication implements Runnable {
-    private static final Logger logger = LoggerFactory.getLogger(InitiateCreditCheckFlow.class);
-
-    private final UniqueIdentifier creditApplicationId;
-    private final CordaRPCOps proxy;
-    private final CreditScoreDesc scoreDesc;
-    private final Double creditScore;
-
-    public UpdateLoanApplication(UniqueIdentifier creditApplicationId, CordaRPCOps proxy, CreditScoreDesc scoreDesc, Double creditScore) {
-        this.creditApplicationId = creditApplicationId;
-        this.proxy = proxy;
-        this.scoreDesc = scoreDesc;
-        this.creditScore = creditScore;
-    }
-
-    @Override
-    public void run() {
-        try {
-            logger.info("Obtained Credit Score Rating from CreditAgency for credit application : " + creditApplicationId +
-                    " scoreDesc : " + scoreDesc.toString() + " creditScore : " + creditScore);
-            SignedTransaction loanUpdateTx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, creditApplicationId, scoreDesc, creditScore).getReturnValue().get();
-            logger.info("Application status for the Loan application is updated with Secure Hash : " + loanUpdateTx.getId().toString());
-        } catch (InterruptedException | ExecutionException e) {
-            logger.error("Error while initiating CreditScoreCheckFlow for loanApplicationId : " + creditApplicationId.getId().toString());
             e.printStackTrace();
         }
     }
