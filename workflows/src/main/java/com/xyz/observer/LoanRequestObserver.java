@@ -51,7 +51,7 @@ public class LoanRequestObserver {
 
                 if (applicationStatus == LoanApplicationStatus.APPLIED) {
                     logger.info("Initiating Credit Check flow from observer for Loan Application ID  : " + applicationId);
-                    Thread newThreadCreditCheckFlow = new Thread(new InitiateCreditCheckFlow(applicationId, proxy));
+                    Thread newThreadCreditCheckFlow = new Thread(new InitiateCreditCheckFlow(applicationId, applicationStatus, proxy));
                     newThreadCreditCheckFlow.start();
                 }
             }));
@@ -67,23 +67,31 @@ class InitiateCreditCheckFlow implements Runnable {
 
     private final UniqueIdentifier loanApplicationId;
     private final CordaRPCOps proxy;
+    private final LoanApplicationStatus loanApplicationStatus;
 
-    public InitiateCreditCheckFlow(UniqueIdentifier loanApplicationId, CordaRPCOps proxy) {
+    public InitiateCreditCheckFlow(UniqueIdentifier loanApplicationId, LoanApplicationStatus applicationStatus, CordaRPCOps proxy) {
         this.loanApplicationId = loanApplicationId;
         this.proxy = proxy;
+        this.loanApplicationStatus = applicationStatus;
     }
 
     @Override
     public void run() {
         try {
+            UniqueIdentifier creditCheckApplicationId = null;
             logger.info("Starting CreditScoreCheckFlow for Loan ApplicationID : " + loanApplicationId.getId().toString());
+
             Party creditCheckAgency = proxy.wellKnownPartyFromX500Name(CordaX500Name.parse("O=NewShireCreditRatingAgency,L=New York,C=US"));
             SignedTransaction tx = proxy.startTrackedFlowDynamic(CreditScoreCheckFlow.class, loanApplicationId, creditCheckAgency).getReturnValue().get();
-            logger.info("Credit Check flow initiated with CreditCheck Application Id : " + ((CreditRatingState) tx.getTx().getOutputs().get(0).getData()).getLoanVerificationId().toString());
+            creditCheckApplicationId = ((CreditRatingState) tx.getTx().getOutputs().get(0).getData()).getLoanVerificationId();
+            logger.info("Credit Check flow initiated with CreditCheck Application Id : " + creditCheckApplicationId.toString());
+
+            SignedTransaction loanUpdateTx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, null, null, null,
+                    loanApplicationId, creditCheckApplicationId, loanApplicationStatus).getReturnValue().get();
+            logger.info("Application status for the Loan application is updated with Secure Hash : " + loanUpdateTx.getId().toString());
         } catch (InterruptedException | ExecutionException e) {
             logger.error("Error while initiating CreditScoreCheckFlow for loanApplicationId : " + loanApplicationId.getId().toString());
             e.printStackTrace();
         }
     }
 }
-

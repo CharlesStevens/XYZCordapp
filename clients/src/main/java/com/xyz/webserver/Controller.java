@@ -94,7 +94,7 @@ public class Controller {
             if (!me.toString().contains("XYZLoaning")) {
                 return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("WRONG NODE TO PROCESS REQUEST TO");
             }
-            SignedTransaction tx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, companyName, businessType, loanAmount).getReturnValue().get();
+            SignedTransaction tx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, companyName, businessType, loanAmount,null,null,null).getReturnValue().get();
             ContractState applicationState = tx.getTx().getOutputs().get(0).getData();
             String loanRequestID = ((LoanApplicationState) applicationState).getLoanApplicationId().toString();
             String loanApplicationState = ((LoanApplicationState) applicationState).getApplicationStatus().toString();

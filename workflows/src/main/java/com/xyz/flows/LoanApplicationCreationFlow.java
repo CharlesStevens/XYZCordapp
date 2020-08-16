@@ -6,9 +6,12 @@ import com.xyz.contracts.LoanApplicationContract;
 import com.xyz.states.LoanApplicationState;
 import net.corda.core.contracts.Command;
 import net.corda.core.contracts.ContractState;
+import net.corda.core.contracts.StateAndRef;
 import net.corda.core.contracts.UniqueIdentifier;
 import net.corda.core.flows.*;
 import net.corda.core.identity.Party;
+import net.corda.core.node.services.Vault;
+import net.corda.core.node.services.vault.QueryCriteria;
 import net.corda.core.transactions.SignedTransaction;
 import net.corda.core.transactions.TransactionBuilder;
 import net.corda.core.utilities.ProgressTracker;
@@ -16,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
+import java.util.List;
 
 import static net.corda.core.contracts.ContractsDSL.requireThat;
 
@@ -27,14 +31,21 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
     private String companyName;
     private String businesstype;
     private int loanAmount;
+    private LoanApplicationStatus applicationStatus;
+    private UniqueIdentifier loanApplicationId;
+    private UniqueIdentifier creditCheckApplicationId;
 
     public LoanApplicationCreationFlow(
             String companyName,
             String businessType,
-            int loanAmount) {
+            int loanAmount, LoanApplicationStatus applicationStatus, UniqueIdentifier loanApplicationId,
+            UniqueIdentifier creditCheckApplicationId) {
         this.companyName = companyName;
         this.loanAmount = loanAmount;
         this.businesstype = businessType;
+        this.loanApplicationId = loanApplicationId;
+        this.creditCheckApplicationId = creditCheckApplicationId;
+        this.applicationStatus = applicationStatus;
     }
 
 
@@ -67,17 +78,50 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
         LOG.info("##### Started Loan request");
         final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
         Party financeParty = getServiceHub().getMyInfo().getLegalIdentities().get(0);
+        LoanApplicationState opLoanApplicationState = null;
+        StateAndRef<LoanApplicationState> ipLoanApplicationState = null;
 
-        UniqueIdentifier loanUniqueIdentifier = new UniqueIdentifier();
-        LoanApplicationState loanApplicationState = new LoanApplicationState(financeParty, companyName, businesstype, loanAmount, LoanApplicationStatus.APPLIED, loanUniqueIdentifier);
+        if (applicationStatus == null) {
+            opLoanApplicationState = new LoanApplicationState(financeParty, companyName, businesstype, loanAmount, LoanApplicationStatus.APPLIED, new UniqueIdentifier());
+        } else {
+            QueryCriteria criteriaApplicationState = new QueryCriteria.LinearStateQueryCriteria(
+                    null,
+                    Arrays.asList(loanApplicationId),
+                    Vault.StateStatus.UNCONSUMED,
+                    null);
 
+            StateAndRef<LoanApplicationState> inputState = null;
+            List<StateAndRef<LoanApplicationState>> inputStateList = getServiceHub().getVaultService().queryBy(LoanApplicationState.class, criteriaApplicationState).getStates();
+            LoanApplicationState vaultApplicationState = null;
+
+            if (inputStateList == null || inputStateList.isEmpty()) {
+                LOG.error("Application State Cannot be found : " + inputStateList.size() + " " + loanApplicationId.toString());
+                throw new IllegalArgumentException("Application State Cannot be found : " + inputStateList.size() + " " + loanApplicationId.toString());
+            } else {
+                LOG.info("Application State queried from Vault : " + inputStateList.size() + " " + loanApplicationId.toString());
+                vaultApplicationState = inputStateList.get(0).getState().getData();
+            }
+
+            ipLoanApplicationState = inputStateList.get(0);
+//                    new LoanApplicationState(vaultApplicationState.getFinanceAgencyNode(), vaultApplicationState.getCompanyName(), vaultApplicationState.getBusinessType(), vaultApplicationState.getLoanAmount(), vaultApplicationState.getApplicationStatus(), vaultApplicationState.getLoanApplicationId());
+            vaultApplicationState.setLoanVerificationId(creditCheckApplicationId);
+            vaultApplicationState.setApplicationStatus(LoanApplicationStatus.DECISION_PENDING);
+            opLoanApplicationState = vaultApplicationState;
+        }
         progressTracker.setCurrentStep(LOAN_REQUESTED);
 
-        final Command<LoanApplicationContract.Commands.LoanApplied> loanAppliedCommand = new Command<LoanApplicationContract.Commands.LoanApplied>(new LoanApplicationContract.Commands.LoanApplied(),
-                Arrays.asList(loanApplicationState.getFinanceAgencyNode().getOwningKey()));
+        Command<LoanApplicationContract.Commands.LoanProcesedForCreditCheck> loanProcessedForCreditCheckCommand = ipLoanApplicationState == null ? null
+                : new Command<>(new LoanApplicationContract.Commands.LoanProcesedForCreditCheck(),
+                Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
 
-        final TransactionBuilder txBuilder = new TransactionBuilder(notary)
-                .addOutputState(loanApplicationState)
+        Command<LoanApplicationContract.Commands.LoanApplied> loanAppliedCommand = loanProcessedForCreditCheckCommand == null ?
+                new Command<>(new LoanApplicationContract.Commands.LoanApplied(),
+                Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey())) : null;
+
+        final TransactionBuilder txBuilder = loanAppliedCommand != null ? new TransactionBuilder(notary)
+                .addOutputState(opLoanApplicationState)
+                .addCommand(loanAppliedCommand) : new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
+                .addOutputState(opLoanApplicationState)
                 .addCommand(loanAppliedCommand);
 
         txBuilder.verify(getServiceHub());

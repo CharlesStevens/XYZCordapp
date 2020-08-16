@@ -17,6 +17,10 @@ public class LoanApplicationContract implements Contract {
         public class LoanApplied implements Commands {
         }
 
+        public class LoanProcesedForCreditCheck implements Commands {
+
+        }
+
         public class LoanApplicationResponse implements Commands {
         }
     }
