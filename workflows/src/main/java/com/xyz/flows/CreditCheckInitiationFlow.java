@@ -26,15 +26,15 @@ import static net.corda.core.contracts.ContractsDSL.requireThat;
 
 @InitiatingFlow
 @StartableByRPC
-public class CreditScoreCheckFlow extends FlowLogic<SignedTransaction> {
-    private static final Logger LOG = LoggerFactory.getLogger(CreditScoreCheckFlow.class.getName());
+public class CreditCheckInitiationFlow extends FlowLogic<SignedTransaction> {
+    private static final Logger LOG = LoggerFactory.getLogger(CreditCheckInitiationFlow.class.getName());
     private Party creditScoreCheckAgency;
     private UniqueIdentifier loanApplicationId;
 
-    public CreditScoreCheckFlow(
-            UniqueIdentifier loanApplicationId, Party creditAgency) {
+    public CreditCheckInitiationFlow(
+            UniqueIdentifier loanApplicationId, Party financeAgency) {
         this.loanApplicationId = loanApplicationId;
-        this.creditScoreCheckAgency = creditAgency;
+        this.creditScoreCheckAgency = financeAgency;
     }
 
     private final ProgressTracker progressTracker = tracker();
@@ -72,8 +72,10 @@ public class CreditScoreCheckFlow extends FlowLogic<SignedTransaction> {
         String companyName = null;
         Integer loanAmount = null;
         String businesstype = null;
+        double creditScore = 0.0;
+        CreditScoreDesc creditScoreDesc = CreditScoreDesc.UNSPECIFIED;
 
-        UniqueIdentifier loanVerificationId = null;
+        UniqueIdentifier loanVerificationId = new UniqueIdentifier();
 
         QueryCriteria criteriaApplicationState = new QueryCriteria.LinearStateQueryCriteria(
                 null,
@@ -81,31 +83,33 @@ public class CreditScoreCheckFlow extends FlowLogic<SignedTransaction> {
                 Vault.StateStatus.UNCONSUMED,
                 null);
 
-        StateAndRef<LoanApplicationState> inputState = null;
         List<StateAndRef<LoanApplicationState>> inputStateList = getServiceHub().getVaultService().queryBy(LoanApplicationState.class, criteriaApplicationState).getStates();
-        LoanApplicationState vaultApplicationState = null;
+        StateAndRef<LoanApplicationState> ipLoanApplicationState = null;
 
         if (inputStateList == null || inputStateList.isEmpty()) {
             LOG.error("Application State Cannot be found : " + inputStateList.size() + " " + loanApplicationId.toString());
             throw new IllegalArgumentException("Application State Cannot be found : " + inputStateList.size() + " " + loanApplicationId.toString());
         } else {
             LOG.info("Application State queried from Vault : " + inputStateList.size() + " " + loanApplicationId.toString());
-            vaultApplicationState = inputStateList.get(0).getState().getData();
+            ipLoanApplicationState = inputStateList.get(0);
         }
 
-        companyName = vaultApplicationState.getCompanyName();
-        loanAmount = vaultApplicationState.getLoanAmount();
-        loanVerificationId = new UniqueIdentifier();
+        companyName = ipLoanApplicationState.getState().getData().getCompanyName();
+        loanAmount = ipLoanApplicationState.getState().getData().getLoanAmount();
+        businesstype = ipLoanApplicationState.getState().getData().getBusinessType();
 
         progressTracker.setCurrentStep(CREDIT_SCORE_REQUESTED);
 
-        CreditRatingState creditState = new CreditRatingState(spirseNode, creditScoreCheckAgency, companyName, businesstype, loanAmount, 0.0, CreditScoreDesc.UNSPECIFIED, loanVerificationId);
+        CreditRatingState outputCreditRatingCheckState = new CreditRatingState(spirseNode, creditScoreCheckAgency, companyName, businesstype, loanAmount,
+                creditScore, creditScoreDesc, loanVerificationId);
 
-        final Command<CreditRatingCheckContract.Commands.CreditCheckRequest> creditScoreCheckRequestCommand = new Command<CreditRatingCheckContract.Commands.CreditCheckRequest>(new CreditRatingCheckContract.Commands.CreditCheckRequest(),
-                Arrays.asList(creditState.getLoaningAgency().getOwningKey(), creditState.getCreditAgencyNode().getOwningKey()));
+        final Command<CreditRatingCheckContract.Commands.CreditCheckInitiation> creditScoreCheckRequestCommand =
+                new Command<CreditRatingCheckContract.Commands.CreditCheckInitiation>(new CreditRatingCheckContract.Commands.CreditCheckInitiation(),
+                        Arrays.asList(outputCreditRatingCheckState.getLoaningAgency().getOwningKey(), outputCreditRatingCheckState.getCreditAgencyNode().getOwningKey()));
 
         final TransactionBuilder txBuilder = new TransactionBuilder(notary)
-                .addOutputState(creditState)
+//                .addInputState(ipLoanApplicationState)
+                .addOutputState(outputCreditRatingCheckState)
                 .addCommand(creditScoreCheckRequestCommand);
 
         txBuilder.verify(getServiceHub());
@@ -127,7 +131,7 @@ public class CreditScoreCheckFlow extends FlowLogic<SignedTransaction> {
 }
 
 
-@InitiatedBy(CreditScoreCheckFlow.class)
+@InitiatedBy(CreditCheckInitiationFlow.class)
 class CreditScoreAcceptor extends FlowLogic<SignedTransaction> {
     private static final Logger LOG = LoggerFactory.getLogger(LoanApplicationAcceptor.class.getName());
     final FlowSession otherPartyFlow;
