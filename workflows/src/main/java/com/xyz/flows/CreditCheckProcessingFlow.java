@@ -33,8 +33,8 @@ public class CreditCheckProcessingFlow extends FlowLogic<SignedTransaction> {
     private Random creditScoreRandom = null;
 
     public CreditCheckProcessingFlow(
-            UniqueIdentifier loanApplicationId, Party financeAgency) {
-        this.creditCheckApplicationId = loanApplicationId;
+            UniqueIdentifier creditCheckApplicationId, Party financeAgency) {
+        this.creditCheckApplicationId = creditCheckApplicationId;
         this.financeAgency = financeAgency;
         this.creditScoreRandom = new Random();
     }

@@ -1,6 +1,6 @@
 package com.xyz.observer;
 
-import com.xyz.flows.CreditCheckInitiationFlow;
+import com.xyz.constants.CreditScoreDesc;
 import com.xyz.flows.CreditCheckProcessingFlow;
 import com.xyz.states.CreditRatingState;
 import net.corda.core.contracts.UniqueIdentifier;
@@ -35,13 +35,15 @@ public class CreditCheckInitiationObserver {
 
             updates.toBlocking().subscribe(update -> update.getProduced().forEach(t -> {
                 CreditRatingState creditCheckState = t.getState().getData();
-                logger.info("New Application for Credit Check from FA is detected with ID : " + creditCheckState.getLoanVerificationId().toString());
-                final UniqueIdentifier creditCheckApplicationId = creditCheckState.getLoanVerificationId();
 
-                logger.info("Initiating Credit Check flow from observer for CreditCheck Application ID  : " + creditCheckApplicationId);
-                Thread newThreadCreditCheckFlow = new Thread(new InitiateCreditCheckProcess(creditCheckApplicationId, proxy));
-                newThreadCreditCheckFlow.start();
+                if (creditCheckState.getCreditScoreDesc() == CreditScoreDesc.UNSPECIFIED) {
+                    logger.info("New Application for Credit Check from FA is detected with ID : " + creditCheckState.getLoanVerificationId().toString());
+                    final UniqueIdentifier creditCheckApplicationId = creditCheckState.getLoanVerificationId();
 
+                    logger.info("Initiating Credit Check flow from observer for CreditCheck Application ID  : " + creditCheckApplicationId);
+                    Thread newThreadCreditCheckFlow = new Thread(new InitiateCreditCheckProcess(creditCheckApplicationId, proxy));
+                    newThreadCreditCheckFlow.start();
+                }
             }));
         } catch (Exception e) {
             logger.error("Exception occurred", e.getMessage());
@@ -66,13 +68,12 @@ class InitiateCreditCheckProcess implements Runnable {
         try {
             logger.info("INitiating the credit check flow but sleeping for 2 minutes from now");
             Thread.sleep(120000);
-            UniqueIdentifier creditCheckApplicationId = null;
             logger.info("Starting CreditScoreCheckFlow for Loan ApplicationID : " + this.creditCheckApplicationId.getId().toString());
 
             Party financeAgencyNode = proxy.wellKnownPartyFromX500Name(CordaX500Name.parse("O=XYZLoaning,L=London,C=GB"));
             SignedTransaction tx = proxy.startTrackedFlowDynamic(CreditCheckProcessingFlow.class, this.creditCheckApplicationId, financeAgencyNode).getReturnValue().get();
-            creditCheckApplicationId = ((CreditRatingState) tx.getTx().getOutputs().get(0).getData()).getLoanVerificationId();
-            logger.info("Credit Check flow updated with CreditCheck Application Id : " + creditCheckApplicationId.toString());
+            logger.info("Credit Check flow updated with CreditCheck Application Id : " +
+                    ((CreditRatingState) tx.getTx().getOutputs().get(0).getData()).getLoanVerificationId().toString());
 
         } catch (InterruptedException | ExecutionException e) {
             logger.error("Error while initiating CreditScoreCheckFlow for loanApplicationId : " + creditCheckApplicationId.getId().toString());
