@@ -1,4 +1,4 @@
-package com.xyz.webserver;
+package com.xyz.webserver.fa;
 
 import org.springframework.boot.Banner;
 import org.springframework.boot.SpringApplication;
@@ -10,12 +10,12 @@ import static org.springframework.boot.WebApplicationType.SERVLET;
  * Our Spring Boot application.
  */
 @SpringBootApplication
-public class XYZCordappApplication {
+public class FinanceAgencyNodeApplication {
     /**
      * Starts our Spring Boot application.
      */
     public static void main(String[] args) {
-        SpringApplication app = new SpringApplication(XYZCordappApplication.class);
+        SpringApplication app = new SpringApplication(FinanceAgencyNodeApplication.class);
         app.setBannerMode(Banner.Mode.OFF);
         app.setWebApplicationType(SERVLET);
         app.run(args);

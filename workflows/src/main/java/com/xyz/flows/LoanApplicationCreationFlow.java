@@ -1,6 +1,7 @@
 package com.xyz.flows;
 
 import co.paralleluniverse.fibers.Suspendable;
+import com.xyz.constants.CreditScoreDesc;
 import com.xyz.constants.LoanApplicationStatus;
 import com.xyz.contracts.LoanApplicationContract;
 import com.xyz.states.LoanApplicationState;
@@ -35,17 +36,30 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
     private UniqueIdentifier loanApplicationId;
     private UniqueIdentifier creditCheckApplicationId;
 
+    private CreditScoreDesc scoreDesc;
+    private Double creditScore;
+
     public LoanApplicationCreationFlow(
             String companyName,
             String businessType,
-            int loanAmount, LoanApplicationStatus applicationStatus, UniqueIdentifier loanApplicationId,
-            UniqueIdentifier creditCheckApplicationId) {
+            int loanAmount) {
         this.companyName = companyName;
         this.loanAmount = loanAmount;
         this.businesstype = businessType;
+
+    }
+
+    public LoanApplicationCreationFlow(LoanApplicationStatus applicationStatus, UniqueIdentifier loanApplicationId,
+                                       UniqueIdentifier creditCheckApplicationId) {
         this.loanApplicationId = loanApplicationId;
         this.creditCheckApplicationId = creditCheckApplicationId;
         this.applicationStatus = applicationStatus;
+    }
+
+    public LoanApplicationCreationFlow(UniqueIdentifier creditCheckApplicationId, CreditScoreDesc scoreDesc, Double creditScore) {
+        this.creditCheckApplicationId = creditCheckApplicationId;
+        this.scoreDesc = scoreDesc;
+        this.creditScore = creditScore;
     }
 
 
@@ -80,10 +94,19 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
         Party financeParty = getServiceHub().getMyInfo().getLegalIdentities().get(0);
         LoanApplicationState opLoanApplicationState = null;
         StateAndRef<LoanApplicationState> ipLoanApplicationState = null;
+        TransactionBuilder txBuilder = null;
 
         if (applicationStatus == null) {
             opLoanApplicationState = new LoanApplicationState(financeParty, companyName, businesstype, loanAmount, LoanApplicationStatus.APPLIED, new UniqueIdentifier());
-        } else {
+            Command<LoanApplicationContract.Commands.LoanApplied> loanAppliedCommand =
+                    new Command<>(new LoanApplicationContract.Commands.LoanApplied(),
+                            Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
+
+            txBuilder = new TransactionBuilder(notary)
+                    .addOutputState(opLoanApplicationState)
+                    .addCommand(loanAppliedCommand);
+
+        } else if (this.scoreDesc == null) {
             QueryCriteria criteriaApplicationState = new QueryCriteria.LinearStateQueryCriteria(
                     null,
                     Arrays.asList(loanApplicationId),
@@ -103,26 +126,37 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
             }
 
             ipLoanApplicationState = inputStateList.get(0);
-//                    new LoanApplicationState(vaultApplicationState.getFinanceAgencyNode(), vaultApplicationState.getCompanyName(), vaultApplicationState.getBusinessType(), vaultApplicationState.getLoanAmount(), vaultApplicationState.getApplicationStatus(), vaultApplicationState.getLoanApplicationId());
             vaultApplicationState.setLoanVerificationId(creditCheckApplicationId);
             vaultApplicationState.setApplicationStatus(LoanApplicationStatus.DECISION_PENDING);
             opLoanApplicationState = vaultApplicationState;
+
+            Command<LoanApplicationContract.Commands.LoanApplied> loanAppliedCommand =
+                    new Command<>(new LoanApplicationContract.Commands.LoanApplied(),
+                            Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
+
+            txBuilder = new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
+                    .addOutputState(opLoanApplicationState)
+                    .addCommand(loanAppliedCommand);
+        } else {
+            List<StateAndRef<LoanApplicationState>> inputStateList = getServiceHub().getVaultService().queryBy(LoanApplicationState.class).getStates();
+            StateAndRef<LoanApplicationState> inputState = inputStateList.stream().filter(t -> t.getState().getData().getLoanVerificationId().toString().equals(creditCheckApplicationId.toString())).findAny().get();
+            LoanApplicationState vaultApplicationState = inputState.getState().getData();
+
+            ipLoanApplicationState = inputState;
+            if (scoreDesc.equals(CreditScoreDesc.GOOD) || scoreDesc.equals(CreditScoreDesc.FAIR))
+                vaultApplicationState.setApplicationStatus(LoanApplicationStatus.APPROVED);
+            else vaultApplicationState.setApplicationStatus(LoanApplicationStatus.DENIED);
+            opLoanApplicationState = vaultApplicationState;
+
+            Command<LoanApplicationContract.Commands.LoanProcesedFromCreditCheck> loanProcessedForCreditCheckCommand =
+                    new Command<>(new LoanApplicationContract.Commands.LoanProcesedFromCreditCheck(),
+                            Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
+
+            txBuilder = new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
+                    .addOutputState(opLoanApplicationState)
+                    .addCommand(loanProcessedForCreditCheckCommand);
         }
         progressTracker.setCurrentStep(LOAN_REQUESTED);
-
-        Command<LoanApplicationContract.Commands.LoanProcesedForCreditCheck> loanProcessedForCreditCheckCommand = ipLoanApplicationState == null ? null
-                : new Command<>(new LoanApplicationContract.Commands.LoanProcesedForCreditCheck(),
-                Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
-
-        Command<LoanApplicationContract.Commands.LoanApplied> loanAppliedCommand = loanProcessedForCreditCheckCommand == null ?
-                new Command<>(new LoanApplicationContract.Commands.LoanApplied(),
-                Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey())) : null;
-
-        final TransactionBuilder txBuilder = loanAppliedCommand != null ? new TransactionBuilder(notary)
-                .addOutputState(opLoanApplicationState)
-                .addCommand(loanAppliedCommand) : new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
-                .addOutputState(opLoanApplicationState)
-                .addCommand(loanAppliedCommand);
 
         txBuilder.verify(getServiceHub());
 

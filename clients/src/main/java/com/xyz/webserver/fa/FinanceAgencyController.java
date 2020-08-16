@@ -1,10 +1,11 @@
-package com.xyz.webserver;
+package com.xyz.webserver.fa;
 
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xyz.flows.LoanApplicationCreationFlow;
 import com.xyz.observer.LoanRequestObserver;
 import com.xyz.states.LoanApplicationState;
+import com.xyz.webserver.util.NodeRPCConnection;
 import net.corda.client.jackson.JacksonSupport;
 import net.corda.core.contracts.ContractState;
 import net.corda.core.contracts.StateAndRef;
@@ -30,25 +31,18 @@ import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
 
 @RestController
 @RequestMapping("/")
-public class Controller {
+public class FinanceAgencyController {
     private static final Logger logger = LoggerFactory.getLogger(RestController.class);
     private final CordaRPCOps proxy;
     private final CordaX500Name me;
 
-    public Controller(NodeRPCConnection rpc) {
-        this.proxy = rpc.proxy;
+    public FinanceAgencyController(NodeRPCConnection rpc) {
+        this.proxy = rpc.getproxy();
         this.me = proxy.nodeInfo().getLegalIdentities().get(0).getName();
 
-        if (me.toString().contains("XYZLoaning")) {
-            Thread loanObserverThread = new Thread(new Runnable() {
-                @Override
-                public void run() {
-                    logger.info("Requesting LoanRequestObserver");
-                    new LoanRequestObserver(proxy, me).observe();
-                }
-            });
-            loanObserverThread.start();
-        }
+        Thread loanObserverThread = new Thread(() ->
+                new LoanRequestObserver(proxy, me).observeLoanApplicationUpdate());
+        loanObserverThread.start();
     }
 
 
@@ -91,10 +85,8 @@ public class Controller {
         try {
             logger.info("Apply for Loan called in Node : " + me.toString());
 
-            if (!me.toString().contains("XYZLoaning")) {
-                return ResponseEntity.status(HttpStatus.BAD_REQUEST).body("WRONG NODE TO PROCESS REQUEST TO");
-            }
-            SignedTransaction tx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, companyName, businessType, loanAmount,null,null,null).getReturnValue().get();
+            SignedTransaction tx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, companyName,
+                    businessType, loanAmount).getReturnValue().get();
             ContractState applicationState = tx.getTx().getOutputs().get(0).getData();
             String loanRequestID = ((LoanApplicationState) applicationState).getLoanApplicationId().toString();
             String loanApplicationState = ((LoanApplicationState) applicationState).getApplicationStatus().toString();
@@ -102,6 +94,7 @@ public class Controller {
             logger.info("Loan Application created : " + "Loan Application Id: " + loanRequestID + " Status : " + loanApplicationState);
             return ResponseEntity.status(HttpStatus.CREATED).body("Loan Application Id: " + loanRequestID + " Status : " + loanApplicationState);
         } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity
                     .status(HttpStatus.BAD_REQUEST)
                     .body(e.getMessage());

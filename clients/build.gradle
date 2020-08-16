@@ -26,24 +26,24 @@ dependencies {
 
 }
 
-springBoot {
+/*springBoot {
     mainClassName = "com.xyz.webserver.XYZCordappApplication"
-}
+}*/
 
 task bootRunFA(type: JavaExec, dependsOn: jar) {
     classpath = sourceSets.main.runtimeClasspath
-    main = 'com.xyz.webserver.XYZCordappApplication'
+    main = 'com.xyz.webserver.fa.FinanceAgencyNodeApplication'
     args '--server.port=8080', '--config.rpc.host=localhost', '--config.rpc.port=10006', '--config.rpc.username=user1', '--config.rpc.password=test'
 }
 
 task bootRunBank(type: JavaExec, dependsOn: jar) {
     classpath = sourceSets.main.runtimeClasspath
-    main = 'com.xyz.webserver.XYZCordappApplication'
+    main = 'com.xyz.webserver.bank.BankNodeApplication'
     args '--server.port=8090', '--config.rpc.host=localhost', '--config.rpc.port=10009', '--config.rpc.username=user1', '--config.rpc.password=test'
 }
 
 task bootRunCA(type: JavaExec, dependsOn: jar) {
     classpath = sourceSets.main.runtimeClasspath
-    main = 'com.xyz.webserver.XYZCordappApplication'
+    main = 'com.xyz.webserver.ca.CreditAgencyNodeApplication'
     args '--server.port=8093', '--config.rpc.host=localhost', '--config.rpc.port=10012', '--config.rpc.username=user1', '--config.rpc.password=test'
 }

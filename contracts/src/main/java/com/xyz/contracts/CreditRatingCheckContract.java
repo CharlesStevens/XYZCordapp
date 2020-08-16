@@ -13,7 +13,11 @@ public class CreditRatingCheckContract implements Contract {
     }
 
     public interface Commands extends CommandData {
-        public class CreditCheckRequest implements CreditRatingCheckContract.Commands {
+        public class CreditCheckInitiation implements CreditRatingCheckContract.Commands {
+
+        }
+
+        public class CreditCheckProcessing implements CreditRatingCheckContract.Commands {
         }
 
         public class CreditCheckResponse implements CreditRatingCheckContract.Commands {

@@ -1,4 +1,4 @@
-package com.xyz.webserver;
+package com.xyz.webserver.util;
 
 import net.corda.client.rpc.CordaRPCClient;
 import net.corda.client.rpc.CordaRPCConnection;
@@ -31,7 +31,7 @@ public class NodeRPCConnection implements AutoCloseable {
     private int rpcPort;
 
     private CordaRPCConnection rpcConnection;
-    CordaRPCOps proxy;
+    private CordaRPCOps proxy;
 
     @PostConstruct
     public void initialiseNodeRPCConnection() {
@@ -39,6 +39,10 @@ public class NodeRPCConnection implements AutoCloseable {
         CordaRPCClient rpcClient = new CordaRPCClient(rpcAddress);
         rpcConnection = rpcClient.start(username, password);
         proxy = rpcConnection.getProxy();
+    }
+
+    public CordaRPCOps getproxy(){
+        return proxy;
     }
 
     @PreDestroy
