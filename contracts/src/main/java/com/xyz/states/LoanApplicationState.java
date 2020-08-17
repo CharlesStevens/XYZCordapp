@@ -25,15 +25,6 @@ public class LoanApplicationState implements LinearState {
     private UniqueIdentifier loanVerificationId;
 
     @ConstructorForDeserialization
-    public LoanApplicationState(Party financeAgencyNode, String companyName, String businessType, int loanAmount, LoanApplicationStatus applicationStatus, UniqueIdentifier loanApplicationId) {
-        this.financeAgencyNode = financeAgencyNode;
-        this.companyName = companyName;
-        this.businessType = businessType;
-        this.loanAmount = loanAmount;
-        this.applicationStatus = applicationStatus;
-        this.loanApplicationId = loanApplicationId;
-    }
-
     public LoanApplicationState(Party financeAgencyNode, String companyName, String businessType, int loanAmount, LoanApplicationStatus applicationStatus, UniqueIdentifier loanApplicationId, UniqueIdentifier loanVerificationId) {
         this.financeAgencyNode = financeAgencyNode;
         this.companyName = companyName;

@@ -1,8 +1,9 @@
-package com.xyz.observer;
+package com.xyz.observer.fa;
 
 import com.xyz.constants.CreditScoreDesc;
-import com.xyz.flows.LoanApplicationCreationFlow;
+import com.xyz.flows.fa.LoanApplicationCreationFlow;
 import com.xyz.states.CreditRatingState;
+import com.xyz.states.LoanApplicationState;
 import net.corda.core.contracts.UniqueIdentifier;
 import net.corda.core.identity.CordaX500Name;
 import net.corda.core.messaging.CordaRPCOps;
@@ -15,14 +16,14 @@ import rx.Observable;
 
 import java.util.concurrent.ExecutionException;
 
-public class CreditAgencyResponseObserver {
+public class FACreditScoreCheckStateObserver {
 
-    private static final Logger logger = LoggerFactory.getLogger(CreditAgencyResponseObserver.class);
+    private static final Logger logger = LoggerFactory.getLogger(FACreditScoreCheckStateObserver.class);
 
     private final CordaRPCOps proxy;
     private final CordaX500Name me;
 
-    public CreditAgencyResponseObserver(CordaRPCOps proxy, CordaX500Name name) {
+    public FACreditScoreCheckStateObserver(CordaRPCOps proxy, CordaX500Name name) {
         this.proxy = proxy;
         this.me = name;
     }
@@ -35,15 +36,16 @@ public class CreditAgencyResponseObserver {
             creditUpdates.toBlocking().subscribe(update -> update.getProduced().forEach(t -> {
                 CreditRatingState creditApplicationState = t.getState().getData();
 
-                logger.info("Update in XYZ Node for Credit Application Id : " + creditApplicationState.getLoanVerificationId() + " Detected with CreditScoreDesc " +
+                logger.info("Update in CreditRatingState detected for CreditCheck verification Id : " + creditApplicationState.getLoanVerificationId() + " with CreditScoreDesc " +
                         creditApplicationState.getCreditScoreDesc().toString());
                 final UniqueIdentifier creditApplicationId = creditApplicationState.getLoanVerificationId();
 
                 if (creditApplicationState.getCreditScoreDesc() != CreditScoreDesc.UNSPECIFIED) {
-                    logger.info("Received Credit rating, updating the loan application, for credit check Id  : " + creditApplicationId.toString());
-                    Thread newThreadCreditCheckFlow = new Thread(new UpdateLoanApplication(creditApplicationId, proxy, creditApplicationState.getCreditScoreDesc(),
-                            creditApplicationState.getCreditScoreCheckRating()));
-                    newThreadCreditCheckFlow.start();
+                    logger.info("CreditScore check has been completed from Credit Check agency, for verification ID : " + creditApplicationId.toString() +
+                            " with CreditScore rating : " + creditApplicationState.getCreditScoreCheckRating() + " and credit score desc : "
+                            + creditApplicationState.getCreditScoreDesc().toString());
+                    new FACreditScoreCheckStateTrigger(creditApplicationId, proxy, creditApplicationState.getCreditScoreDesc(),
+                            creditApplicationState.getCreditScoreCheckRating()).trigger();
                 }
 
             }));
@@ -58,28 +60,30 @@ public class CreditAgencyResponseObserver {
 }
 
 
-class UpdateLoanApplication implements Runnable {
-    private static final Logger logger = LoggerFactory.getLogger(InitiateCreditCheckFlow.class);
+class FACreditScoreCheckStateTrigger {
+    private static final Logger logger = LoggerFactory.getLogger(FALoanApplicationStateTrigger.class);
 
     private final UniqueIdentifier creditApplicationId;
     private final CordaRPCOps proxy;
     private final CreditScoreDesc scoreDesc;
     private final Double creditScore;
 
-    public UpdateLoanApplication(UniqueIdentifier creditApplicationId, CordaRPCOps proxy, CreditScoreDesc scoreDesc, Double creditScore) {
+    public FACreditScoreCheckStateTrigger(UniqueIdentifier creditApplicationId, CordaRPCOps proxy, CreditScoreDesc scoreDesc, Double creditScore) {
         this.creditApplicationId = creditApplicationId;
         this.proxy = proxy;
         this.scoreDesc = scoreDesc;
         this.creditScore = creditScore;
     }
 
-    @Override
-    public void run() {
+    public void trigger() {
         try {
-            logger.info("Obtained Credit Score Rating from CreditAgency for credit application : " + creditApplicationId +
-                    " scoreDesc : " + scoreDesc.toString() + " creditScore : " + creditScore);
+            logger.info("========###########################======");
+            logger.info("Finalising the LoanApplication status for verification ID : " + creditApplicationId.toString());
             SignedTransaction loanUpdateTx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, creditApplicationId, scoreDesc, creditScore).getReturnValue().get();
-            logger.info("Application status for the Loan application is updated with Secure Hash : " + loanUpdateTx.getId().toString());
+            LoanApplicationState laState = ((LoanApplicationState) loanUpdateTx.getTx().getOutputs().get(0).getData());
+            logger.info("Application status for the Loan application is Updated LoanApplication Id: " + laState.getLoanApplicationId().toString() +
+                    " Verfication ID: " + laState.getLoanVerificationId().toString() + " Status : " + laState.getApplicationStatus().toString());
+            logger.info("=================##########===============");
         } catch (InterruptedException | ExecutionException e) {
             logger.error("Error while initiating CreditScoreCheckFlow for loanApplicationId : " + creditApplicationId.getId().toString());
             e.printStackTrace();
