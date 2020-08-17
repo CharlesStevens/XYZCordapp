@@ -1,4 +1,4 @@
-package com.xyz.flows;
+package com.xyz.flows.fa;
 
 import co.paralleluniverse.fibers.Suspendable;
 import com.xyz.constants.CreditScoreDesc;
@@ -89,15 +89,15 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
 
     @Override
     public SignedTransaction call() throws FlowException {
-        LOG.info("##### Started Loan request");
+        LOG.info("Started Loan request creating/update");
         final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
         Party financeParty = getServiceHub().getMyInfo().getLegalIdentities().get(0);
         LoanApplicationState opLoanApplicationState = null;
         StateAndRef<LoanApplicationState> ipLoanApplicationState = null;
         TransactionBuilder txBuilder = null;
 
-        if (applicationStatus == null) {
-            opLoanApplicationState = new LoanApplicationState(financeParty, companyName, businesstype, loanAmount, LoanApplicationStatus.APPLIED, new UniqueIdentifier());
+        if (applicationStatus == null && scoreDesc == null) {
+            opLoanApplicationState = new LoanApplicationState(financeParty, companyName, businesstype, loanAmount, LoanApplicationStatus.APPLIED, new UniqueIdentifier(), null);
             Command<LoanApplicationContract.Commands.LoanApplied> loanAppliedCommand =
                     new Command<>(new LoanApplicationContract.Commands.LoanApplied(),
                             Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
@@ -113,7 +113,6 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
                     Vault.StateStatus.UNCONSUMED,
                     null);
 
-            StateAndRef<LoanApplicationState> inputState = null;
             List<StateAndRef<LoanApplicationState>> inputStateList = getServiceHub().getVaultService().queryBy(LoanApplicationState.class, criteriaApplicationState).getStates();
             LoanApplicationState vaultApplicationState = null;
 
@@ -155,6 +154,7 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
             txBuilder = new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
                     .addOutputState(opLoanApplicationState)
                     .addCommand(loanProcessedForCreditCheckCommand);
+
         }
         progressTracker.setCurrentStep(LOAN_REQUESTED);
 
@@ -165,7 +165,6 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
         final SignedTransaction singTransaction = getServiceHub().signInitialTransaction(txBuilder);
 
         progressTracker.setCurrentStep(SIGNING_TRANSACTION);
-        LOG.info("##### Submitting Loan signed request");
         return subFlow(new FinalityFlow(singTransaction));
     }
 }

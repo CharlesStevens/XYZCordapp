@@ -1,12 +1,10 @@
-package com.xyz.observer;
+package com.xyz.observer.fa;
 
-import com.xyz.constants.CreditScoreDesc;
 import com.xyz.constants.LoanApplicationStatus;
-import com.xyz.flows.CreditCheckInitiationFlow;
-import com.xyz.flows.LoanApplicationCreationFlow;
+import com.xyz.flows.fa.CreditCheckInitiationFlow;
+import com.xyz.flows.fa.LoanApplicationCreationFlow;
 import com.xyz.states.CreditRatingState;
 import com.xyz.states.LoanApplicationState;
-import net.corda.core.contracts.StateAndRef;
 import net.corda.core.contracts.UniqueIdentifier;
 import net.corda.core.identity.CordaX500Name;
 import net.corda.core.identity.Party;
@@ -20,13 +18,17 @@ import rx.Observable;
 
 import java.util.concurrent.ExecutionException;
 
-public class LoanRequestObserver {
-    private static final Logger logger = LoggerFactory.getLogger(LoanRequestObserver.class);
+/**
+ * This observer observes a event of new Loan Application Creation and initiates a LoanVerfication transaction with the
+ * CA. Post which it updates the status of the Loan application to Decision_pending.
+ */
+public class FALoanApplicationStateObserver {
+    private static final Logger logger = LoggerFactory.getLogger(FALoanApplicationStateObserver.class);
 
     private final CordaRPCOps proxy;
     private final CordaX500Name me;
 
-    public LoanRequestObserver(CordaRPCOps proxy, CordaX500Name name) {
+    public FALoanApplicationStateObserver(CordaRPCOps proxy, CordaX500Name name) {
         this.proxy = proxy;
         this.me = name;
     }
@@ -39,16 +41,12 @@ public class LoanRequestObserver {
             loanUpdates.toBlocking().subscribe(update -> update.getProduced().forEach(t -> {
 
                 LoanApplicationState applicationState = t.getState().getData();
-                logger.info("Update in XYZ Node for Loan Application Id : " + applicationState.getLoanApplicationId() + " Detected.");
                 final LoanApplicationStatus applicationStatus = applicationState.getApplicationStatus();
                 final UniqueIdentifier applicationId = applicationState.getLoanApplicationId();
-
-                logger.info("loan Application status : " + applicationStatus);
+                logger.info("LoanApplicationState Update Observed for : " + applicationId.toString() + " and Status : " + applicationStatus.toString());
 
                 if (applicationStatus == LoanApplicationStatus.APPLIED) {
-                    logger.info("Initiating Credit Check flow from observer for Loan Application ID  : " + applicationId);
-                    Thread newThreadCreditCheckFlow = new Thread(new InitiateCreditCheckFlow(applicationId, applicationStatus, proxy));
-                    newThreadCreditCheckFlow.start();
+                    new FALoanApplicationStateTrigger(applicationId, applicationStatus, proxy).trigger();
                 }
             }));
 
@@ -59,32 +57,35 @@ public class LoanRequestObserver {
     }
 }
 
-class InitiateCreditCheckFlow implements Runnable {
-    private static final Logger logger = LoggerFactory.getLogger(InitiateCreditCheckFlow.class);
+class FALoanApplicationStateTrigger {
+    private static final Logger logger = LoggerFactory.getLogger(FALoanApplicationStateTrigger.class);
 
     private final UniqueIdentifier loanApplicationId;
     private final CordaRPCOps proxy;
     private final LoanApplicationStatus loanApplicationStatus;
 
-    public InitiateCreditCheckFlow(UniqueIdentifier loanApplicationId, LoanApplicationStatus applicationStatus, CordaRPCOps proxy) {
+    public FALoanApplicationStateTrigger(UniqueIdentifier loanApplicationId, LoanApplicationStatus applicationStatus, CordaRPCOps proxy) {
         this.loanApplicationId = loanApplicationId;
         this.proxy = proxy;
         this.loanApplicationStatus = applicationStatus;
     }
 
-    @Override
-    public void run() {
+    public void trigger() {
         try {
+            logger.info("========###########################======");
             UniqueIdentifier creditCheckApplicationId = null;
-            logger.info("Starting CreditScoreCheckFlow for Loan ApplicationID : " + loanApplicationId.getId().toString());
+            logger.info("Intiating Request to CA for credit check for LoanApplicationID : " + loanApplicationId.toString() + " with status : " + loanApplicationStatus.toString());
 
             Party creditCheckAgency = proxy.wellKnownPartyFromX500Name(CordaX500Name.parse("O=NewShireCreditRatingAgency,L=New York,C=US"));
             SignedTransaction tx = proxy.startTrackedFlowDynamic(CreditCheckInitiationFlow.class, loanApplicationId, creditCheckAgency).getReturnValue().get();
             creditCheckApplicationId = ((CreditRatingState) tx.getTx().getOutputs().get(0).getData()).getLoanVerificationId();
-            logger.info("Credit Check flow initiated with CreditCheck Application Id : " + creditCheckApplicationId.toString());
+            logger.info("Credit Check flow initiated with CreditCheck Application Id : " + creditCheckApplicationId.toString() + ". Updating loan application status...");
 
             SignedTransaction loanUpdateTx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, loanApplicationStatus, loanApplicationId, creditCheckApplicationId).getReturnValue().get();
-            logger.info("Application status for the Loan application is updated with Secure Hash : " + loanUpdateTx.getId().toString());
+            LoanApplicationState laState = ((LoanApplicationState) loanUpdateTx.getTx().getOutputs().get(0).getData());
+            logger.info("Application status for the LoanApplication is updated LoanApplicationID: " + laState.getLoanApplicationId().toString() +
+                    " CreditCheckApplicationId : " + laState.getLoanVerificationId().toString() + " Status : " + laState.getApplicationStatus().toString());
+            logger.info("=================##########===============");
         } catch (InterruptedException | ExecutionException e) {
             logger.error("Error while initiating CreditScoreCheckFlow for loanApplicationId : " + loanApplicationId.getId().toString());
             e.printStackTrace();

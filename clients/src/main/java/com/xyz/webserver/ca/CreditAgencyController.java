@@ -2,7 +2,7 @@ package com.xyz.webserver.ca;
 
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.xyz.observer.CreditCheckInitiationObserver;
+import com.xyz.observer.ca.CACreditScoreCheckStateObserver;
 import com.xyz.webserver.util.NodeRPCConnection;
 import net.corda.client.jackson.JacksonSupport;
 import net.corda.core.contracts.ContractState;
@@ -38,7 +38,7 @@ public class CreditAgencyController {
         this.me = proxy.nodeInfo().getLegalIdentities().get(0).getName();
 
         Thread creditObserverThread = new Thread(() ->
-                new CreditCheckInitiationObserver(proxy, me).observeCreditCheckApplication());
+                new CACreditScoreCheckStateObserver(proxy, me).observeCreditCheckApplication());
         creditObserverThread.start();
     }
 

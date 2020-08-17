@@ -2,9 +2,9 @@ package com.xyz.webserver.fa;
 
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.xyz.flows.LoanApplicationCreationFlow;
-import com.xyz.observer.CreditAgencyResponseObserver;
-import com.xyz.observer.LoanRequestObserver;
+import com.xyz.flows.fa.LoanApplicationCreationFlow;
+import com.xyz.observer.fa.FACreditScoreCheckStateObserver;
+import com.xyz.observer.fa.FALoanApplicationStateObserver;
 import com.xyz.states.LoanApplicationState;
 import com.xyz.webserver.util.NodeRPCConnection;
 import net.corda.client.jackson.JacksonSupport;
@@ -42,9 +42,9 @@ public class FinanceAgencyController {
         this.me = proxy.nodeInfo().getLegalIdentities().get(0).getName();
 
         Thread loanObserverThread = new Thread(() ->
-                new LoanRequestObserver(proxy, me).observeLoanApplicationUpdate());
+                new FALoanApplicationStateObserver(proxy, me).observeLoanApplicationUpdate());
         Thread creditAgencyResponseObserverThread = new Thread(() ->
-                new CreditAgencyResponseObserver(proxy, me).observeCreditAgencyResponse());
+                new FACreditScoreCheckStateObserver(proxy, me).observeCreditAgencyResponse());
 
         loanObserverThread.start();
         creditAgencyResponseObserverThread.start();
@@ -88,7 +88,7 @@ public class FinanceAgencyController {
     private ResponseEntity<String> applyForLoan(@RequestParam("companyname") String companyName,
                                                 @RequestParam("businesstype") String businessType, @RequestParam("loanamount") int loanAmount) {
         try {
-            logger.info("Apply for Loan called in Node : " + me.toString());
+            logger.info("HTTP REQUEST : Apply for Loan called in Node : " + me.toString());
 
             SignedTransaction tx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, companyName,
                     businessType, loanAmount).getReturnValue().get();
@@ -96,7 +96,7 @@ public class FinanceAgencyController {
             String loanRequestID = ((LoanApplicationState) applicationState).getLoanApplicationId().toString();
             String loanApplicationState = ((LoanApplicationState) applicationState).getApplicationStatus().toString();
 
-            logger.info("Loan Application created : " + "Loan Application Id: " + loanRequestID + " Status : " + loanApplicationState);
+            logger.info("HTTP RESPONSE : Loan Application created : " + "Loan Application Id: " + loanRequestID + " Status : " + loanApplicationState);
             return ResponseEntity.status(HttpStatus.CREATED).body("Loan Application Id: " + loanRequestID + " Status : " + loanApplicationState);
         } catch (Exception e) {
             e.printStackTrace();

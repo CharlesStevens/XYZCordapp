@@ -1,10 +1,9 @@
-package com.xyz.flows;
+package com.xyz.flows.ca;
 
 import co.paralleluniverse.fibers.Suspendable;
 import com.xyz.constants.CreditScoreDesc;
 import com.xyz.contracts.CreditRatingCheckContract;
 import com.xyz.states.CreditRatingState;
-import com.xyz.states.LoanApplicationState;
 import net.corda.core.contracts.Command;
 import net.corda.core.contracts.ContractState;
 import net.corda.core.contracts.StateAndRef;
@@ -21,20 +20,23 @@ import org.slf4j.LoggerFactory;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.Random;
 
 import static net.corda.core.contracts.ContractsDSL.requireThat;
 
 @InitiatingFlow
 @StartableByRPC
-public class CreditCheckInitiationFlow extends FlowLogic<SignedTransaction> {
-    private static final Logger LOG = LoggerFactory.getLogger(CreditCheckInitiationFlow.class.getName());
-    private Party creditScoreCheckAgency;
-    private UniqueIdentifier loanApplicationId;
+public class CreditCheckProcessingFlow extends FlowLogic<SignedTransaction> {
+    private static final Logger LOG = LoggerFactory.getLogger(CreditCheckProcessingFlow.class.getName());
+    private Party financeAgency;
+    private UniqueIdentifier creditCheckApplicationId;
+    private Random creditScoreRandom = null;
 
-    public CreditCheckInitiationFlow(
-            UniqueIdentifier loanApplicationId, Party financeAgency) {
-        this.loanApplicationId = loanApplicationId;
-        this.creditScoreCheckAgency = financeAgency;
+    public CreditCheckProcessingFlow(
+            UniqueIdentifier creditCheckApplicationId, Party financeAgency) {
+        this.creditCheckApplicationId = creditCheckApplicationId;
+        this.financeAgency = financeAgency;
+        this.creditScoreRandom = new Random();
     }
 
     private final ProgressTracker progressTracker = tracker();
@@ -64,7 +66,7 @@ public class CreditCheckInitiationFlow extends FlowLogic<SignedTransaction> {
     @Override
     @Suspendable
     public SignedTransaction call() throws FlowException {
-        LOG.info("##### Started Processing Credit Check flow");
+        LOG.info("CreditCheck processing initiated with Verification ID : "+ creditCheckApplicationId.toString());
 
         final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
         Party spirseNode = getServiceHub().getMyInfo().getLegalIdentities().get(0);
@@ -73,54 +75,55 @@ public class CreditCheckInitiationFlow extends FlowLogic<SignedTransaction> {
         Integer loanAmount = null;
         String businesstype = null;
         double creditScore = 0.0;
-        CreditScoreDesc creditScoreDesc = CreditScoreDesc.UNSPECIFIED;
-
-        UniqueIdentifier loanVerificationId = new UniqueIdentifier();
+        CreditScoreDesc creditScoreDesc = null;
 
         QueryCriteria criteriaApplicationState = new QueryCriteria.LinearStateQueryCriteria(
                 null,
-                Arrays.asList(loanApplicationId),
+                Arrays.asList(creditCheckApplicationId),
                 Vault.StateStatus.UNCONSUMED,
                 null);
 
-        List<StateAndRef<LoanApplicationState>> inputStateList = getServiceHub().getVaultService().queryBy(LoanApplicationState.class, criteriaApplicationState).getStates();
-        StateAndRef<LoanApplicationState> ipLoanApplicationState = null;
+        List<StateAndRef<CreditRatingState>> inputStateList = getServiceHub().getVaultService().queryBy(CreditRatingState.class, criteriaApplicationState).getStates();
+        StateAndRef<CreditRatingState> ipCreditRatingState = null;
 
         if (inputStateList == null || inputStateList.isEmpty()) {
-            LOG.error("Application State Cannot be found : " + inputStateList.size() + " " + loanApplicationId.toString());
-            throw new IllegalArgumentException("Application State Cannot be found : " + inputStateList.size() + " " + loanApplicationId.toString());
+            LOG.error("Application State Cannot be found : " + inputStateList.size() + " " + creditCheckApplicationId.toString());
+            throw new IllegalArgumentException("Application State Cannot be found : " + inputStateList.size() + " " + creditCheckApplicationId.toString());
         } else {
-            LOG.info("Application State queried from Vault : " + inputStateList.size() + " " + loanApplicationId.toString());
-            ipLoanApplicationState = inputStateList.get(0);
+            LOG.info("Application State queried from Vault : " + inputStateList.size() + " " + creditCheckApplicationId.toString());
+            ipCreditRatingState = inputStateList.get(0);
         }
 
-        companyName = ipLoanApplicationState.getState().getData().getCompanyName();
-        loanAmount = ipLoanApplicationState.getState().getData().getLoanAmount();
-        businesstype = ipLoanApplicationState.getState().getData().getBusinessType();
+        companyName = ipCreditRatingState.getState().getData().getCompanyName();
+        loanAmount = ipCreditRatingState.getState().getData().getLoanAmount();
+        businesstype = ipCreditRatingState.getState().getData().getBusinessType();
 
         progressTracker.setCurrentStep(CREDIT_SCORE_REQUESTED);
 
-        CreditRatingState outputCreditRatingCheckState = new CreditRatingState(spirseNode, creditScoreCheckAgency, companyName, businesstype, loanAmount,
-                creditScore, creditScoreDesc, loanVerificationId);
+        creditScore = 0.0 + (10.0 - 0.0) * creditScoreRandom.nextDouble();
 
-        final Command<CreditRatingCheckContract.Commands.CreditCheckInitiation> creditScoreCheckRequestCommand =
-                new Command<CreditRatingCheckContract.Commands.CreditCheckInitiation>(new CreditRatingCheckContract.Commands.CreditCheckInitiation(),
-                        Arrays.asList(outputCreditRatingCheckState.getLoaningAgency().getOwningKey(), outputCreditRatingCheckState.getCreditAgencyNode().getOwningKey()));
+        if (creditScore > 7.5) creditScoreDesc = CreditScoreDesc.GOOD;
+        else if (creditScore > 5.0) creditScoreDesc = CreditScoreDesc.FAIR;
+        else creditScoreDesc = CreditScoreDesc.POOR;
 
-        final TransactionBuilder txBuilder = new TransactionBuilder(notary)
-//                .addInputState(ipLoanApplicationState)
-                .addOutputState(outputCreditRatingCheckState)
+        CreditRatingState creditState = new CreditRatingState(spirseNode, financeAgency, companyName, businesstype, loanAmount, creditScore, creditScoreDesc, creditCheckApplicationId);
+
+        final Command<CreditRatingCheckContract.Commands.CreditCheckProcessing> creditScoreCheckRequestCommand = new Command<>(new CreditRatingCheckContract.Commands.CreditCheckProcessing(),
+                Arrays.asList(creditState.getCreditAgencyNode().getOwningKey(), creditState.getLoaningAgency().getOwningKey()));
+
+        final TransactionBuilder txBuilder = new TransactionBuilder(notary).addInputState(ipCreditRatingState)
+                .addOutputState(creditState)
                 .addCommand(creditScoreCheckRequestCommand);
 
         txBuilder.verify(getServiceHub());
-        LOG.info("Credit Score request check initiated with Verification ID : " + loanVerificationId.toString());
+        LOG.info("Credit Score request check initiated with Verification ID : " + creditCheckApplicationId.toString());
         progressTracker.setCurrentStep(CONTRACT_VERIFICATION);
 
         final SignedTransaction signTx = getServiceHub().signInitialTransaction(txBuilder);
 
         progressTracker.setCurrentStep(SIGNING_TRANSACTION);
 
-        FlowSession otherPartySession = initiateFlow(creditScoreCheckAgency);
+        FlowSession otherPartySession = initiateFlow(financeAgency);
         final SignedTransaction fullySignedTx = subFlow(new CollectSignaturesFlow(signTx, Arrays.asList(otherPartySession), CollectSignaturesFlow.Companion.tracker()));
         progressTracker.setCurrentStep(COLLECTING_SIGNATURE);
 
@@ -131,12 +134,12 @@ public class CreditCheckInitiationFlow extends FlowLogic<SignedTransaction> {
 }
 
 
-@InitiatedBy(CreditCheckInitiationFlow.class)
-class CreditScoreAcceptor extends FlowLogic<SignedTransaction> {
-    private static final Logger LOG = LoggerFactory.getLogger(LoanApplicationAcceptor.class.getName());
+@InitiatedBy(CreditCheckProcessingFlow.class)
+class CreditScoreProcessingAcceptor extends FlowLogic<SignedTransaction> {
+    private static final Logger LOG = LoggerFactory.getLogger(CreditScoreProcessingAcceptor.class.getName());
     final FlowSession otherPartyFlow;
 
-    public CreditScoreAcceptor(FlowSession otherPartyFlow) {
+    public CreditScoreProcessingAcceptor(FlowSession otherPartyFlow) {
         this.otherPartyFlow = otherPartyFlow;
     }
 
