@@ -72,6 +72,11 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
         this.bankProcessingStatus = bankProcessingStatus;
     }
 
+    public LoanApplicationCreationFlow(UniqueIdentifier bankProcessingId, BankProcessingStatus bankProcessingStatus) {
+        this.bankProcessingId = bankProcessingId;
+        this.bankProcessingStatus = bankProcessingStatus;
+    }
+
 
     private final ProgressTracker progressTracker = tracker();
 

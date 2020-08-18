@@ -72,8 +72,7 @@ class FABankFinanceProcessedTrigger {
     public void trigger() {
         try {
             logger.info("Finalising the LoanApplication status for verification ID : " + bankProcessingId.toString());
-            UniqueIdentifier loanApplicationId = null;
-            SignedTransaction loanUpdateTx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, bankProcessingId, loanApplicationId, bankProcessingStatus).getReturnValue().get();
+            SignedTransaction loanUpdateTx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, bankProcessingId, bankProcessingStatus).getReturnValue().get();
             LoanApplicationState laState = ((LoanApplicationState) loanUpdateTx.getTx().getOutputs().get(0).getData());
             logger.info("Application status for the Loan application is Updated LoanApplication Id: " + laState.getLoanApplicationId().toString() +
                     " Verfication ID: " + laState.getLoanVerificationId().toString() + " Status : " + laState.getApplicationStatus().toString());
