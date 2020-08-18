@@ -64,9 +64,8 @@ class CACreditScoreCheckStateTrigger {
 
     public void trigger() {
         try {
-            logger.info("========###########################======");
-            logger.info("INTENTIONAL SLEEP OF 2 MINUTES, TO VERIFY STATES INVOKING APIs");
-            Thread.sleep(120000);
+            logger.info("INTENTIONAL SLEEP OF 1 MINUTES, TO VERIFY STATES INVOKING APIs");
+            Thread.sleep(60000);
             logger.info("Starting processing for CreditScore evaluation for CreditCheck ApplicationID : " + this.creditCheckApplicationId.getId().toString());
             Party financeAgencyNode = proxy.wellKnownPartyFromX500Name(CordaX500Name.parse("O=XYZLoaning,L=London,C=GB"));
 
@@ -75,7 +74,6 @@ class CACreditScoreCheckStateTrigger {
 
             logger.info("Credit Check flow updated with CreditCheck Application Id : " +
                     caState.getLoanVerificationId().toString() + " With Status : " + caState.getCreditScoreDesc().toString() + " and Score : " + caState.getCreditScoreCheckRating());
-            logger.info("=================##########===============");
         } catch (InterruptedException | ExecutionException e) {
             logger.error("Error while initiating CreditScoreCheckFlow for loanApplicationId : " + creditCheckApplicationId.getId().toString());
             e.printStackTrace();

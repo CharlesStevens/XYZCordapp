@@ -2,6 +2,8 @@ package com.xyz.webserver.bank;
 
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.xyz.observer.bank.BankLoanProcessingStateObserver;
+import com.xyz.observer.ca.CACreditScoreCheckStateObserver;
 import com.xyz.webserver.util.NodeRPCConnection;
 import net.corda.client.jackson.JacksonSupport;
 import net.corda.core.contracts.ContractState;
@@ -35,6 +37,10 @@ public class BankController {
     public BankController(NodeRPCConnection rpc) {
         this.proxy = rpc.getproxy();
         this.me = proxy.nodeInfo().getLegalIdentities().get(0).getName();
+
+        Thread bankProcessingRequestThread = new Thread(() ->
+                new BankLoanProcessingStateObserver(proxy, me).observeBankProcessingRequest());
+        bankProcessingRequestThread.start();
     }
     
     public String toDisplayString(X500Name name) {

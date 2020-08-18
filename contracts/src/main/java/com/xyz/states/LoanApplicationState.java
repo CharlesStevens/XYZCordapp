@@ -23,9 +23,10 @@ public class LoanApplicationState implements LinearState {
     private LoanApplicationStatus applicationStatus;
     private UniqueIdentifier loanApplicationId;
     private UniqueIdentifier loanVerificationId;
+    private UniqueIdentifier bankProcessingId;
 
     @ConstructorForDeserialization
-    public LoanApplicationState(Party financeAgencyNode, String companyName, String businessType, int loanAmount, LoanApplicationStatus applicationStatus, UniqueIdentifier loanApplicationId, UniqueIdentifier loanVerificationId) {
+    public LoanApplicationState(Party financeAgencyNode, String companyName, String businessType, int loanAmount, LoanApplicationStatus applicationStatus, UniqueIdentifier loanApplicationId, UniqueIdentifier loanVerificationId, UniqueIdentifier bankProcessingId) {
         this.financeAgencyNode = financeAgencyNode;
         this.companyName = companyName;
         this.businessType = businessType;
@@ -33,6 +34,7 @@ public class LoanApplicationState implements LinearState {
         this.applicationStatus = applicationStatus;
         this.loanApplicationId = loanApplicationId;
         this.loanVerificationId = loanVerificationId;
+        this.bankProcessingId = bankProcessingId;
     }
 
     public Party getFinanceAgencyNode() {
@@ -89,6 +91,14 @@ public class LoanApplicationState implements LinearState {
 
     public void setLoanVerificationId(UniqueIdentifier loanVerificationId) {
         this.loanVerificationId = loanVerificationId;
+    }
+
+    public UniqueIdentifier getBankProcessingId() {
+        return bankProcessingId;
+    }
+
+    public void setBankProcessingId(UniqueIdentifier bankProcessingId) {
+        this.bankProcessingId = bankProcessingId;
     }
 
     @NotNull
