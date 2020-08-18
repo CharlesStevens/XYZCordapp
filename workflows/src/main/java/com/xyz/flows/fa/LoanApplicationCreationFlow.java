@@ -126,7 +126,7 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
 
             ipLoanApplicationState = inputStateList.get(0);
             vaultApplicationState.setLoanVerificationId(creditCheckApplicationId);
-            vaultApplicationState.setApplicationStatus(LoanApplicationStatus.DECISION_PENDING);
+            vaultApplicationState.setApplicationStatus(LoanApplicationStatus.FORWARDED_TO_CREDIT_CHECK_AGENCY);
             opLoanApplicationState = vaultApplicationState;
 
             Command<LoanApplicationContract.Commands.LoanApplied> loanAppliedCommand =
@@ -143,8 +143,8 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
 
             ipLoanApplicationState = inputState;
             if (scoreDesc.equals(CreditScoreDesc.GOOD) || scoreDesc.equals(CreditScoreDesc.FAIR))
-                vaultApplicationState.setApplicationStatus(LoanApplicationStatus.APPROVED);
-            else vaultApplicationState.setApplicationStatus(LoanApplicationStatus.DENIED);
+                vaultApplicationState.setApplicationStatus(LoanApplicationStatus.CREDIT_SCORE_CHECK_PASS);
+            else vaultApplicationState.setApplicationStatus(LoanApplicationStatus.CREDIT_SCORE_CHECK_FAILED);
             opLoanApplicationState = vaultApplicationState;
 
             Command<LoanApplicationContract.Commands.LoanProcesedFromCreditCheck> loanProcessedForCreditCheckCommand =

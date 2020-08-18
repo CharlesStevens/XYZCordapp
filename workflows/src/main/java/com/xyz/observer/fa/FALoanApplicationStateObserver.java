@@ -1,6 +1,7 @@
 package com.xyz.observer.fa;
 
 import com.xyz.constants.LoanApplicationStatus;
+import com.xyz.flows.fa.BankLoanProcessingFlow;
 import com.xyz.flows.fa.CreditCheckInitiationFlow;
 import com.xyz.flows.fa.LoanApplicationCreationFlow;
 import com.xyz.states.CreditRatingState;
@@ -47,6 +48,8 @@ public class FALoanApplicationStateObserver {
 
                 if (applicationStatus == LoanApplicationStatus.APPLIED) {
                     new FALoanApplicationStateTrigger(applicationId, applicationStatus, proxy).trigger();
+                } else if (applicationStatus == LoanApplicationStatus.CREDIT_SCORE_CHECK_PASS) {
+                    new FABankProcessingTrigger(applicationId, proxy);
                 }
             }));
 
@@ -85,6 +88,38 @@ class FALoanApplicationStateTrigger {
             LoanApplicationState laState = ((LoanApplicationState) loanUpdateTx.getTx().getOutputs().get(0).getData());
             logger.info("Application status for the LoanApplication is updated LoanApplicationID: " + laState.getLoanApplicationId().toString() +
                     " CreditCheckApplicationId : " + laState.getLoanVerificationId().toString() + " Status : " + laState.getApplicationStatus().toString());
+            logger.info("=================##########===============");
+        } catch (InterruptedException | ExecutionException e) {
+            logger.error("Error while initiating CreditScoreCheckFlow for loanApplicationId : " + loanApplicationId.getId().toString());
+            e.printStackTrace();
+        }
+    }
+}
+
+
+class FABankProcessingTrigger {
+    private static final Logger logger = LoggerFactory.getLogger(FABankProcessingTrigger.class);
+
+    private final UniqueIdentifier loanApplicationId;
+    private final CordaRPCOps proxy;
+
+    public FABankProcessingTrigger(UniqueIdentifier loanApplicationId, CordaRPCOps proxy) {
+        this.loanApplicationId = loanApplicationId;
+        this.proxy = proxy;
+    }
+
+    public void trigger() {
+        try {
+            logger.info("========###########################======");
+            UniqueIdentifier creditCheckApplicationId = null;
+            logger.info("Intiating Bank processing for LoanApplicationID : " + loanApplicationId.toString());
+
+            Party bankNode = proxy.wellKnownPartyFromX500Name(CordaX500Name.parse("O=MTCBank,L=New York,C=US"));
+            SignedTransaction bankProcessing = proxy.startTrackedFlowDynamic(BankLoanProcessingFlow.class, loanApplicationId, bankNode).getReturnValue().get();
+            LoanApplicationState laState = ((LoanApplicationState) bankProcessing.getTx().getOutputs().get(0).getData());
+            logger.info("Application status for the LoanApplication is updated LoanApplicationID: " + laState.getLoanApplicationId().toString() +
+                    " CreditCheckApplicationId : " + laState.getLoanVerificationId().toString() + " Status : " + laState.getApplicationStatus().toString());
+
             logger.info("=================##########===============");
         } catch (InterruptedException | ExecutionException e) {
             logger.error("Error while initiating CreditScoreCheckFlow for loanApplicationId : " + loanApplicationId.getId().toString());
