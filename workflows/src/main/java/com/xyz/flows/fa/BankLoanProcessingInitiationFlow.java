@@ -1,6 +1,7 @@
 package com.xyz.flows.fa;
 
 import co.paralleluniverse.fibers.Suspendable;
+import com.xyz.constants.BankProcessingStatus;
 import com.xyz.constants.CreditScoreDesc;
 import com.xyz.contracts.BankFinanceValidationContract;
 import com.xyz.states.BankFinanceState;
@@ -27,12 +28,12 @@ import static net.corda.core.contracts.ContractsDSL.requireThat;
 
 @InitiatingFlow
 @StartableByRPC
-public class BankLoanProcessingFlow extends FlowLogic<SignedTransaction> {
-    private static final Logger LOG = LoggerFactory.getLogger(CreditCheckInitiationFlow.class.getName());
+public class BankLoanProcessingInitiationFlow extends FlowLogic<SignedTransaction> {
+    private static final Logger LOG = LoggerFactory.getLogger(BankLoanProcessingInitiationFlow.class.getName());
     private Party bankNode;
     private UniqueIdentifier loanApplicationId;
 
-    public BankLoanProcessingFlow(
+    public BankLoanProcessingInitiationFlow(
             UniqueIdentifier loanApplicationId, Party bankNode) {
         this.loanApplicationId = loanApplicationId;
         this.bankNode = bankNode;
@@ -92,33 +93,20 @@ public class BankLoanProcessingFlow extends FlowLogic<SignedTransaction> {
             ipLoanApplicationState = inputStateList.get(0);
         }
 
-        QueryCriteria criteriaCACheck = new QueryCriteria.LinearStateQueryCriteria(
-                null,
-                Arrays.asList(ipLoanApplicationState.getState().getData().getLoanVerificationId()),
-                Vault.StateStatus.UNCONSUMED,
-                null);
-
-        List<StateAndRef<CreditRatingState>> creditScoreStates = getServiceHub().getVaultService().queryBy(CreditRatingState.class, criteriaApplicationState).getStates();
-        StateAndRef<CreditRatingState> creditScoreState = null;
-
-        if (creditScoreStates == null || inputStateList.isEmpty()) {
-            LOG.error("Verification State Cannot be found : " + creditScoreStates.size() + " " + loanApplicationId.toString());
-            throw new IllegalArgumentException("Verification State Cannot be found : " + creditScoreStates.size() + " " + loanApplicationId.toString());
-        } else {
-            LOG.info("Application State queried from Vault : " + creditScoreStates.size() + " " + loanApplicationId.toString());
-            creditScoreState = creditScoreStates.get(0);
-        }
-
+        final LoanApplicationState laState = ipLoanApplicationState.getState().getData();
+        List<StateAndRef<CreditRatingState>> vaultCreditRatingStates = getServiceHub().getVaultService().queryBy(CreditRatingState.class).getStates();
+        StateAndRef<CreditRatingState> creditState = vaultCreditRatingStates.stream().filter(t -> t.getState().getData().getLoanVerificationId().toString().equals(laState.getLoanVerificationId().toString())).findAny().get();
+        CreditRatingState ratingState = creditState.getState().getData();
 
         companyName = ipLoanApplicationState.getState().getData().getCompanyName();
         loanAmount = ipLoanApplicationState.getState().getData().getLoanAmount();
         businesstype = ipLoanApplicationState.getState().getData().getBusinessType();
-        creditScoreDesc = creditScoreState.getState().getData().getCreditScoreDesc();
+        creditScoreDesc = ratingState.getCreditScoreDesc();
 
         progressTracker.setCurrentStep(BANK_PROCESSING_INITIATED);
 
         BankFinanceState bankFinanceState = new BankFinanceState(spirseNode, bankNode, companyName, businesstype, loanAmount,
-                creditScoreDesc, false, bankProcessingId);
+                creditScoreDesc, BankProcessingStatus.IN_PROCESSING, bankProcessingId);
 
         final Command<BankFinanceValidationContract.Commands.BankProcessing> bankProcessingCommand =
                 new Command<BankFinanceValidationContract.Commands.BankProcessing>(new BankFinanceValidationContract.Commands.BankProcessing(),
@@ -148,12 +136,12 @@ public class BankLoanProcessingFlow extends FlowLogic<SignedTransaction> {
 
 }
 
-@InitiatedBy(BankLoanProcessingFlow.class)
-class BankProcessingAcceptor extends FlowLogic<SignedTransaction> {
-    private static final Logger LOG = LoggerFactory.getLogger(BankProcessingAcceptor.class.getName());
+@InitiatedBy(BankLoanProcessingInitiationFlow.class)
+class BankProcessingInitiationAcceptor extends FlowLogic<SignedTransaction> {
+    private static final Logger LOG = LoggerFactory.getLogger(BankProcessingInitiationAcceptor.class.getName());
     final FlowSession otherPartyFlow;
 
-    public BankProcessingAcceptor(FlowSession otherPartyFlow) {
+    public BankProcessingInitiationAcceptor(FlowSession otherPartyFlow) {
         this.otherPartyFlow = otherPartyFlow;
     }
 

@@ -1,8 +1,10 @@
 package com.xyz.flows.fa;
 
 import co.paralleluniverse.fibers.Suspendable;
+import com.xyz.constants.BankProcessingStatus;
 import com.xyz.constants.CreditScoreDesc;
 import com.xyz.constants.LoanApplicationStatus;
+import com.xyz.contracts.BankFinanceValidationContract;
 import com.xyz.contracts.LoanApplicationContract;
 import com.xyz.states.LoanApplicationState;
 import net.corda.core.contracts.Command;
@@ -35,6 +37,8 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
     private LoanApplicationStatus applicationStatus;
     private UniqueIdentifier loanApplicationId;
     private UniqueIdentifier creditCheckApplicationId;
+    private UniqueIdentifier bankProcessingId;
+    private BankProcessingStatus bankProcessingStatus;
 
     private CreditScoreDesc scoreDesc;
     private Double creditScore;
@@ -60,6 +64,12 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
         this.creditCheckApplicationId = creditCheckApplicationId;
         this.scoreDesc = scoreDesc;
         this.creditScore = creditScore;
+    }
+
+    public LoanApplicationCreationFlow(UniqueIdentifier bankProcessingId, UniqueIdentifier loanApplicationId, BankProcessingStatus bankProcessingStatus) {
+        this.bankProcessingId = bankProcessingId;
+        this.loanApplicationId = loanApplicationId;
+        this.bankProcessingStatus = bankProcessingStatus;
     }
 
 
@@ -97,7 +107,7 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
         TransactionBuilder txBuilder = null;
 
         if (applicationStatus == null && scoreDesc == null) {
-            opLoanApplicationState = new LoanApplicationState(financeParty, companyName, businesstype, loanAmount, LoanApplicationStatus.APPLIED, new UniqueIdentifier(), null);
+            opLoanApplicationState = new LoanApplicationState(financeParty, companyName, businesstype, loanAmount, LoanApplicationStatus.APPLIED, new UniqueIdentifier(), null, null);
             Command<LoanApplicationContract.Commands.LoanApplied> loanAppliedCommand =
                     new Command<>(new LoanApplicationContract.Commands.LoanApplied(),
                             Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
@@ -136,7 +146,7 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
             txBuilder = new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
                     .addOutputState(opLoanApplicationState)
                     .addCommand(loanAppliedCommand);
-        } else {
+        } else if (creditCheckApplicationId != null && scoreDesc != null) {
             List<StateAndRef<LoanApplicationState>> inputStateList = getServiceHub().getVaultService().queryBy(LoanApplicationState.class).getStates();
             StateAndRef<LoanApplicationState> inputState = inputStateList.stream().filter(t -> t.getState().getData().getLoanVerificationId().toString().equals(creditCheckApplicationId.toString())).findAny().get();
             LoanApplicationState vaultApplicationState = inputState.getState().getData();
@@ -155,6 +165,32 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
                     .addOutputState(opLoanApplicationState)
                     .addCommand(loanProcessedForCreditCheckCommand);
 
+        } else if (bankProcessingId != null && bankProcessingStatus != null) {
+            List<StateAndRef<LoanApplicationState>> inputStateList = getServiceHub().getVaultService().queryBy(LoanApplicationState.class).getStates();
+            StateAndRef<LoanApplicationState> inputState = bankProcessingStatus == BankProcessingStatus.IN_PROCESSING ? inputStateList.stream().filter(t -> t.getState().getData().getLoanApplicationId().toString().equals(loanApplicationId.toString())).findAny().get()
+                    : inputStateList.stream().filter(t -> t.getState().getData().getBankProcessingId().toString().equals(bankProcessingId.toString())).findAny().get();
+            LoanApplicationState vaultApplicationState = inputState.getState().getData();
+
+            ipLoanApplicationState = inputState;
+
+            if (bankProcessingStatus.equals(BankProcessingStatus.IN_PROCESSING)) {
+                vaultApplicationState.setBankProcessingId(bankProcessingId);
+                vaultApplicationState.setApplicationStatus(LoanApplicationStatus.FORWARDED_TO_BANK);
+            } else if (bankProcessingStatus.equals(BankProcessingStatus.PROCESSED)) {
+                vaultApplicationState.setApplicationStatus(LoanApplicationStatus.LOAN_DISBURSED);
+            } else {
+                vaultApplicationState.setApplicationStatus(LoanApplicationStatus.REJECTED_FROM_BANK);
+            }
+
+            opLoanApplicationState = vaultApplicationState;
+
+            Command<BankFinanceValidationContract.Commands.LoanRequestProcessed> loanProcessedFromBankCommand =
+                    new Command<>(new BankFinanceValidationContract.Commands.LoanRequestProcessed(),
+                            Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
+
+            txBuilder = new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
+                    .addOutputState(opLoanApplicationState)
+                    .addCommand(loanProcessedFromBankCommand);
         }
         progressTracker.setCurrentStep(LOAN_REQUESTED);
 

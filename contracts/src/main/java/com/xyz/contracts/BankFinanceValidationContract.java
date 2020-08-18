@@ -15,8 +15,9 @@ public class BankFinanceValidationContract implements Contract {
         public class BankProcessing implements BankFinanceValidationContract.Commands {
         }
 
-        public class LoanDisbursed implements BankFinanceValidationContract.Commands {
+        public class LoanRequestProcessed implements BankFinanceValidationContract.Commands {
 
         }
+
     }
 }

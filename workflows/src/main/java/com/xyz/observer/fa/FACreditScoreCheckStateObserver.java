@@ -61,7 +61,7 @@ public class FACreditScoreCheckStateObserver {
 
 
 class FACreditScoreCheckStateTrigger {
-    private static final Logger logger = LoggerFactory.getLogger(FALoanApplicationStateTrigger.class);
+    private static final Logger logger = LoggerFactory.getLogger(FACreditScoreCheckStateTrigger.class);
 
     private final UniqueIdentifier creditApplicationId;
     private final CordaRPCOps proxy;
@@ -77,13 +77,11 @@ class FACreditScoreCheckStateTrigger {
 
     public void trigger() {
         try {
-            logger.info("========###########################======");
             logger.info("Finalising the LoanApplication status for verification ID : " + creditApplicationId.toString());
             SignedTransaction loanUpdateTx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, creditApplicationId, scoreDesc, creditScore).getReturnValue().get();
             LoanApplicationState laState = ((LoanApplicationState) loanUpdateTx.getTx().getOutputs().get(0).getData());
             logger.info("Application status for the Loan application is Updated LoanApplication Id: " + laState.getLoanApplicationId().toString() +
                     " Verfication ID: " + laState.getLoanVerificationId().toString() + " Status : " + laState.getApplicationStatus().toString());
-            logger.info("=================##########===============");
         } catch (InterruptedException | ExecutionException e) {
             logger.error("Error while initiating CreditScoreCheckFlow for loanApplicationId : " + creditApplicationId.getId().toString());
             e.printStackTrace();

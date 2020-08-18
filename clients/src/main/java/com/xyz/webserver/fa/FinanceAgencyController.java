@@ -3,6 +3,7 @@ package com.xyz.webserver.fa;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xyz.flows.fa.LoanApplicationCreationFlow;
+import com.xyz.observer.fa.FABankFinanceStateObserver;
 import com.xyz.observer.fa.FACreditScoreCheckStateObserver;
 import com.xyz.observer.fa.FALoanApplicationStateObserver;
 import com.xyz.states.LoanApplicationState;
@@ -45,9 +46,12 @@ public class FinanceAgencyController {
                 new FALoanApplicationStateObserver(proxy, me).observeLoanApplicationUpdate());
         Thread creditAgencyResponseObserverThread = new Thread(() ->
                 new FACreditScoreCheckStateObserver(proxy, me).observeCreditAgencyResponse());
+        Thread bankStateObserverThread = new Thread(() ->
+                new FABankFinanceStateObserver(proxy, me).observeBankFinanceState());
 
         loanObserverThread.start();
         creditAgencyResponseObserverThread.start();
+        bankStateObserverThread.start();
     }
 
 
