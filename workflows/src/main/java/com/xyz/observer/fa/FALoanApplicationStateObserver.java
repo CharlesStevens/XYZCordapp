@@ -116,7 +116,7 @@ class FABankProcessingTrigger {
             BankFinanceState bankState = ((BankFinanceState) bankProcessing.getTx().getOutputs().get(0).getData());
             logger.info("Loan processing initiated with Bank with Bank Application ID : " + bankState.getBankLoanProcessingId().toString() + " with status : " + bankState.getBankProcessingStatus().toString());
 
-            SignedTransaction loanUpdateTx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, loanApplicationID, bankState.getBankLoanProcessingId(), bankState).getReturnValue().get();
+            SignedTransaction loanUpdateTx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class, bankState.getBankLoanProcessingId(), loanApplicationID, bankState).getReturnValue().get();
             LoanApplicationState laState = ((LoanApplicationState) loanUpdateTx.getTx().getOutputs().get(0).getData());
             logger.info("Application status for the LoanApplication is updated LoanApplicationID: " + laState.getLoanApplicationId().toString() +
                     " CreditCheckApplicationId : " + laState.getLoanVerificationId().toString() + " Status : " + laState.getApplicationStatus().toString());
