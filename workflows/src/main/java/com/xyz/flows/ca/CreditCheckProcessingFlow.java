@@ -69,7 +69,7 @@ public class CreditCheckProcessingFlow extends FlowLogic<SignedTransaction> {
         LOG.info("CreditCheck processing initiated with Verification ID : "+ creditCheckApplicationId.toString());
 
         final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
-        Party spirseNode = getServiceHub().getMyInfo().getLegalIdentities().get(0);
+        Party financeNode = getServiceHub().getMyInfo().getLegalIdentities().get(0);
 
         String companyName = null;
         Integer loanAmount = null;
@@ -106,7 +106,7 @@ public class CreditCheckProcessingFlow extends FlowLogic<SignedTransaction> {
         else if (creditScore > 5.0) creditScoreDesc = CreditScoreDesc.FAIR;
         else creditScoreDesc = CreditScoreDesc.POOR;
 
-        CreditRatingState creditState = new CreditRatingState(spirseNode, financeAgency, companyName, businesstype, loanAmount, creditScore, creditScoreDesc, creditCheckApplicationId);
+        CreditRatingState creditState = new CreditRatingState(financeNode, financeAgency, companyName, businesstype, loanAmount, creditScore, creditScoreDesc, creditCheckApplicationId);
 
         final Command<CreditRatingCheckContract.Commands.CreditCheckProcessed> creditScoreCheckRequestCommand = new Command<>(new CreditRatingCheckContract.Commands.CreditCheckProcessed(),
                 Arrays.asList(creditState.getCreditAgencyNode().getOwningKey(), creditState.getLoaningAgency().getOwningKey()));
