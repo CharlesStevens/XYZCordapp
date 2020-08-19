@@ -108,7 +108,7 @@ public class CreditCheckProcessingFlow extends FlowLogic<SignedTransaction> {
 
         CreditRatingState creditState = new CreditRatingState(spirseNode, financeAgency, companyName, businesstype, loanAmount, creditScore, creditScoreDesc, creditCheckApplicationId);
 
-        final Command<CreditRatingCheckContract.Commands.CreditCheckProcessing> creditScoreCheckRequestCommand = new Command<>(new CreditRatingCheckContract.Commands.CreditCheckProcessing(),
+        final Command<CreditRatingCheckContract.Commands.CreditCheckProcessed> creditScoreCheckRequestCommand = new Command<>(new CreditRatingCheckContract.Commands.CreditCheckProcessed(),
                 Arrays.asList(creditState.getCreditAgencyNode().getOwningKey(), creditState.getLoaningAgency().getOwningKey()));
 
         final TransactionBuilder txBuilder = new TransactionBuilder(notary).addInputState(ipCreditRatingState)

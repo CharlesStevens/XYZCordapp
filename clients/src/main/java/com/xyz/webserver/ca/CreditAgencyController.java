@@ -14,6 +14,7 @@ import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.style.BCStyle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,13 +34,19 @@ public class CreditAgencyController {
     private final CordaRPCOps proxy;
     private final CordaX500Name me;
 
+    @Value("${disable.observers}")
+    private boolean disableObservers;
+
+
     public CreditAgencyController(NodeRPCConnection rpc) {
         this.proxy = rpc.getproxy();
         this.me = proxy.nodeInfo().getLegalIdentities().get(0).getName();
 
-        Thread creditObserverThread = new Thread(() ->
-                new CACreditScoreCheckStateObserver(proxy, me).observeCreditCheckApplication());
-        creditObserverThread.start();
+        if (!disableObservers) {
+            Thread creditObserverThread = new Thread(() ->
+                    new CACreditScoreCheckStateObserver(proxy, me).observeCreditCheckApplication());
+            creditObserverThread.start();
+        }
     }
 
     public String toDisplayString(X500Name name) {

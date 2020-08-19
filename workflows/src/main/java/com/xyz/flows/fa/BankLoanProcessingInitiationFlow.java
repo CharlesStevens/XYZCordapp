@@ -108,8 +108,8 @@ public class BankLoanProcessingInitiationFlow extends FlowLogic<SignedTransactio
         BankFinanceState bankFinanceState = new BankFinanceState(spirseNode, bankNode, companyName, businesstype, loanAmount,
                 creditScoreDesc, BankProcessingStatus.IN_PROCESSING, bankProcessingId);
 
-        final Command<BankFinanceValidationContract.Commands.BankProcessing> bankProcessingCommand =
-                new Command<BankFinanceValidationContract.Commands.BankProcessing>(new BankFinanceValidationContract.Commands.BankProcessing(),
+        final Command<BankFinanceValidationContract.Commands.BankProcessingInitiated> bankProcessingCommand =
+                new Command<BankFinanceValidationContract.Commands.BankProcessingInitiated>(new BankFinanceValidationContract.Commands.BankProcessingInitiated(),
                         Arrays.asList(bankFinanceState.getFinanceAgencyNode().getOwningKey(), bankFinanceState.getBankNode().getOwningKey()));
 
         final TransactionBuilder txBuilder = new TransactionBuilder(notary)

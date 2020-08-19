@@ -66,8 +66,8 @@ class BankProcessingTrigger {
 
     public void trigger() {
         try {
-            logger.info("INTENTIONAL SLEEP OF 1 MINUTES, TO VERIFY STATES INVOKING APIs");
-            Thread.sleep(60000);
+            logger.info("INTENTIONAL SLEEP OF 20 SEC, TO VERIFY STATES INVOKING APIs");
+            Thread.sleep(20000);
 
             logger.info("Starting processing for bank processing for Processing ApplicationID : " + this.bankProcessingApplicationId.getId().toString());
             Party financeAgencyNode = proxy.wellKnownPartyFromX500Name(CordaX500Name.parse("O=XYZLoaning,L=London,C=GB"));

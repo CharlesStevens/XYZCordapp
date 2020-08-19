@@ -19,6 +19,7 @@ import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x500.style.BCStyle;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
@@ -38,20 +39,26 @@ public class FinanceAgencyController {
     private final CordaRPCOps proxy;
     private final CordaX500Name me;
 
+    @Value("${disable.observers}")
+    private boolean disableObservers;
+
+
     public FinanceAgencyController(NodeRPCConnection rpc) {
         this.proxy = rpc.getproxy();
         this.me = proxy.nodeInfo().getLegalIdentities().get(0).getName();
 
-        Thread loanObserverThread = new Thread(() ->
-                new FALoanApplicationStateObserver(proxy, me).observeLoanApplicationUpdate());
-        Thread creditAgencyResponseObserverThread = new Thread(() ->
-                new FACreditScoreCheckStateObserver(proxy, me).observeCreditAgencyResponse());
-        Thread bankStateObserverThread = new Thread(() ->
-                new FABankFinanceStateObserver(proxy, me).observeBankFinanceState());
+        if (!disableObservers) {
+            Thread loanObserverThread = new Thread(() ->
+                    new FALoanApplicationStateObserver(proxy, me).observeLoanApplicationUpdate());
+            Thread creditAgencyResponseObserverThread = new Thread(() ->
+                    new FACreditScoreCheckStateObserver(proxy, me).observeCreditAgencyResponse());
+            Thread bankStateObserverThread = new Thread(() ->
+                    new FABankFinanceStateObserver(proxy, me).observeBankFinanceState());
 
-        loanObserverThread.start();
-        creditAgencyResponseObserverThread.start();
-        bankStateObserverThread.start();
+            loanObserverThread.start();
+            creditAgencyResponseObserverThread.start();
+            bankStateObserverThread.start();
+        }
     }
 
 

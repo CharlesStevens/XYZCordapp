@@ -104,11 +104,10 @@ public class CreditCheckInitiationFlow extends FlowLogic<SignedTransaction> {
                 creditScore, creditScoreDesc, loanVerificationId);
 
         final Command<CreditRatingCheckContract.Commands.CreditCheckInitiation> creditScoreCheckRequestCommand =
-                new Command<CreditRatingCheckContract.Commands.CreditCheckInitiation>(new CreditRatingCheckContract.Commands.CreditCheckInitiation(),
+                new Command<>(new CreditRatingCheckContract.Commands.CreditCheckInitiation(),
                         Arrays.asList(outputCreditRatingCheckState.getLoaningAgency().getOwningKey(), outputCreditRatingCheckState.getCreditAgencyNode().getOwningKey()));
 
         final TransactionBuilder txBuilder = new TransactionBuilder(notary)
-//                .addInputState(ipLoanApplicationState)
                 .addOutputState(outputCreditRatingCheckState)
                 .addCommand(creditScoreCheckRequestCommand);
 
