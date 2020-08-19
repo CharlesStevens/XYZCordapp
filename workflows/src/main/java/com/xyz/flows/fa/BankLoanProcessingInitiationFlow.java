@@ -68,7 +68,7 @@ public class BankLoanProcessingInitiationFlow extends FlowLogic<SignedTransactio
         LOG.info("##### Started Request for CreditCheck flow");
 
         final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
-        Party spirseNode = getServiceHub().getMyInfo().getLegalIdentities().get(0);
+        Party financeNode = getServiceHub().getMyInfo().getLegalIdentities().get(0);
 
         String companyName = null;
         Integer loanAmount = null;
@@ -105,11 +105,11 @@ public class BankLoanProcessingInitiationFlow extends FlowLogic<SignedTransactio
 
         progressTracker.setCurrentStep(BANK_PROCESSING_INITIATED);
 
-        BankFinanceState bankFinanceState = new BankFinanceState(spirseNode, bankNode, companyName, businesstype, loanAmount,
+        BankFinanceState bankFinanceState = new BankFinanceState(financeNode, bankNode, companyName, businesstype, loanAmount,
                 creditScoreDesc, BankProcessingStatus.IN_PROCESSING, bankProcessingId);
 
-        final Command<BankFinanceValidationContract.Commands.BankProcessing> bankProcessingCommand =
-                new Command<BankFinanceValidationContract.Commands.BankProcessing>(new BankFinanceValidationContract.Commands.BankProcessing(),
+        final Command<BankFinanceValidationContract.Commands.BankProcessingInitiated> bankProcessingCommand =
+                new Command<BankFinanceValidationContract.Commands.BankProcessingInitiated>(new BankFinanceValidationContract.Commands.BankProcessingInitiated(),
                         Arrays.asList(bankFinanceState.getFinanceAgencyNode().getOwningKey(), bankFinanceState.getBankNode().getOwningKey()));
 
         final TransactionBuilder txBuilder = new TransactionBuilder(notary)

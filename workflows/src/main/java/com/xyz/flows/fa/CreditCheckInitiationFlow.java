@@ -67,7 +67,7 @@ public class CreditCheckInitiationFlow extends FlowLogic<SignedTransaction> {
         LOG.info("##### Started Request for CreditCheck flow");
 
         final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
-        Party spirseNode = getServiceHub().getMyInfo().getLegalIdentities().get(0);
+        Party financeNode = getServiceHub().getMyInfo().getLegalIdentities().get(0);
 
         String companyName = null;
         Integer loanAmount = null;
@@ -100,15 +100,14 @@ public class CreditCheckInitiationFlow extends FlowLogic<SignedTransaction> {
 
         progressTracker.setCurrentStep(CREDIT_SCORE_REQUESTED);
 
-        CreditRatingState outputCreditRatingCheckState = new CreditRatingState(spirseNode, creditScoreCheckAgency, companyName, businesstype, loanAmount,
+        CreditRatingState outputCreditRatingCheckState = new CreditRatingState(financeNode, creditScoreCheckAgency, companyName, businesstype, loanAmount,
                 creditScore, creditScoreDesc, loanVerificationId);
 
         final Command<CreditRatingCheckContract.Commands.CreditCheckInitiation> creditScoreCheckRequestCommand =
-                new Command<CreditRatingCheckContract.Commands.CreditCheckInitiation>(new CreditRatingCheckContract.Commands.CreditCheckInitiation(),
+                new Command<>(new CreditRatingCheckContract.Commands.CreditCheckInitiation(),
                         Arrays.asList(outputCreditRatingCheckState.getLoaningAgency().getOwningKey(), outputCreditRatingCheckState.getCreditAgencyNode().getOwningKey()));
 
         final TransactionBuilder txBuilder = new TransactionBuilder(notary)
-//                .addInputState(ipLoanApplicationState)
                 .addOutputState(outputCreditRatingCheckState)
                 .addCommand(creditScoreCheckRequestCommand);
 
