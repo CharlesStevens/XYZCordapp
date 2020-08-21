@@ -75,7 +75,7 @@ public class BankLoanDisbursementFlow extends FlowLogic<SignedTransaction> {
         Party bankNode = getServiceHub().getMyInfo().getLegalIdentities().get(0);
 
         String companyName = null;
-        Integer loanAmount = null;
+        Long loanAmount = null;
         String businesstype = null;
         CreditScoreDesc creditScoreDesc = null;
 

@@ -27,144 +27,145 @@ import static net.corda.core.contracts.ContractsDSL.requireThat;
 @InitiatingFlow
 @StartableByRPC
 public class CreditCheckProcessingFlow extends FlowLogic<SignedTransaction> {
-    private static final Logger LOG = LoggerFactory.getLogger(CreditCheckProcessingFlow.class.getName());
-    private Party financeAgency;
-    private UniqueIdentifier creditCheckApplicationId;
-    private Random creditScoreRandom = null;
+	private static final Logger LOG = LoggerFactory.getLogger(CreditCheckProcessingFlow.class.getName());
+	private Party financeAgency;
+	private UniqueIdentifier creditCheckApplicationId;
+	private Random creditScoreRandom = null;
 
-    public CreditCheckProcessingFlow(
-            UniqueIdentifier creditCheckApplicationId, Party financeAgency) {
-        this.creditCheckApplicationId = creditCheckApplicationId;
-        this.financeAgency = financeAgency;
-        this.creditScoreRandom = new Random();
-    }
+	public CreditCheckProcessingFlow(UniqueIdentifier creditCheckApplicationId, Party financeAgency) {
+		this.creditCheckApplicationId = creditCheckApplicationId;
+		this.financeAgency = financeAgency;
+		this.creditScoreRandom = new Random();
+	}
 
-    private final ProgressTracker progressTracker = tracker();
+	private final ProgressTracker progressTracker = tracker();
 
-    private static final ProgressTracker.Step CREDIT_SCORE_REQUESTED = new ProgressTracker.Step("Requesting Credit Score from Credit Rate scoring agency");
-    private static final ProgressTracker.Step CONTRACT_VERIFICATION = new ProgressTracker.Step("Verified the contract between FA and XYZ Node");
-    private static final ProgressTracker.Step SIGNING_TRANSACTION = new ProgressTracker.Step("Signing the transaction");
-    private static final ProgressTracker.Step COLLECTING_SIGNATURE = new ProgressTracker.Step("Collection Signature from Finance Agency and Bank");
-    private static final ProgressTracker.Step FINALISING_TRANSACTION = new ProgressTracker.Step("Recording transaction") {
-        @Override
-        public ProgressTracker childProgressTracker() {
-            return FinalityFlow.tracker();
-        }
-    };
+	private static final ProgressTracker.Step CREDIT_SCORE_REQUESTED = new ProgressTracker.Step(
+			"Requesting Credit Score from Credit Rate scoring agency");
+	private static final ProgressTracker.Step CONTRACT_VERIFICATION = new ProgressTracker.Step(
+			"Verified the contract between FA and XYZ Node");
+	private static final ProgressTracker.Step SIGNING_TRANSACTION = new ProgressTracker.Step("Signing the transaction");
+	private static final ProgressTracker.Step COLLECTING_SIGNATURE = new ProgressTracker.Step(
+			"Collection Signature from Finance Agency and Bank");
+	private static final ProgressTracker.Step FINALISING_TRANSACTION = new ProgressTracker.Step(
+			"Recording transaction") {
+		@Override
+		public ProgressTracker childProgressTracker() {
+			return FinalityFlow.tracker();
+		}
+	};
 
-    private static ProgressTracker tracker() {
-        return new ProgressTracker(
-                CREDIT_SCORE_REQUESTED,
-                CONTRACT_VERIFICATION,
-                SIGNING_TRANSACTION,
-                COLLECTING_SIGNATURE,
-                FINALISING_TRANSACTION
-        );
-    }
+	private static ProgressTracker tracker() {
+		return new ProgressTracker(CREDIT_SCORE_REQUESTED, CONTRACT_VERIFICATION, SIGNING_TRANSACTION,
+				COLLECTING_SIGNATURE, FINALISING_TRANSACTION);
+	}
 
+	@Override
+	@Suspendable
+	public SignedTransaction call() throws FlowException {
+		LOG.info("CreditCheck processing initiated with Verification ID : " + creditCheckApplicationId.toString());
 
-    @Override
-    @Suspendable
-    public SignedTransaction call() throws FlowException {
-        LOG.info("CreditCheck processing initiated with Verification ID : "+ creditCheckApplicationId.toString());
+		final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
+		Party financeNode = getServiceHub().getMyInfo().getLegalIdentities().get(0);
 
-        final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
-        Party financeNode = getServiceHub().getMyInfo().getLegalIdentities().get(0);
+		String companyName = null;
+		Long loanAmount = null;
+		String businesstype = null;
+		double creditScore = 0.0;
+		CreditScoreDesc creditScoreDesc = null;
 
-        String companyName = null;
-        Integer loanAmount = null;
-        String businesstype = null;
-        double creditScore = 0.0;
-        CreditScoreDesc creditScoreDesc = null;
+		QueryCriteria criteriaApplicationState = new QueryCriteria.LinearStateQueryCriteria(null,
+				Arrays.asList(creditCheckApplicationId), Vault.StateStatus.UNCONSUMED, null);
 
-        QueryCriteria criteriaApplicationState = new QueryCriteria.LinearStateQueryCriteria(
-                null,
-                Arrays.asList(creditCheckApplicationId),
-                Vault.StateStatus.UNCONSUMED,
-                null);
+		List<StateAndRef<CreditRatingState>> inputStateList = getServiceHub().getVaultService()
+				.queryBy(CreditRatingState.class, criteriaApplicationState).getStates();
+		StateAndRef<CreditRatingState> ipCreditRatingState = null;
 
-        List<StateAndRef<CreditRatingState>> inputStateList = getServiceHub().getVaultService().queryBy(CreditRatingState.class, criteriaApplicationState).getStates();
-        StateAndRef<CreditRatingState> ipCreditRatingState = null;
+		if (inputStateList == null || inputStateList.isEmpty()) {
+			LOG.error("Application State Cannot be found : " + inputStateList.size() + " "
+					+ creditCheckApplicationId.toString());
+			throw new IllegalArgumentException("Application State Cannot be found : " + inputStateList.size() + " "
+					+ creditCheckApplicationId.toString());
+		} else {
+			LOG.info("Application State queried from Vault : " + inputStateList.size() + " "
+					+ creditCheckApplicationId.toString());
+			ipCreditRatingState = inputStateList.get(0);
+		}
 
-        if (inputStateList == null || inputStateList.isEmpty()) {
-            LOG.error("Application State Cannot be found : " + inputStateList.size() + " " + creditCheckApplicationId.toString());
-            throw new IllegalArgumentException("Application State Cannot be found : " + inputStateList.size() + " " + creditCheckApplicationId.toString());
-        } else {
-            LOG.info("Application State queried from Vault : " + inputStateList.size() + " " + creditCheckApplicationId.toString());
-            ipCreditRatingState = inputStateList.get(0);
-        }
+		companyName = ipCreditRatingState.getState().getData().getCompanyName();
+		loanAmount = ipCreditRatingState.getState().getData().getLoanAmount();
+		businesstype = ipCreditRatingState.getState().getData().getBusinessType();
 
-        companyName = ipCreditRatingState.getState().getData().getCompanyName();
-        loanAmount = ipCreditRatingState.getState().getData().getLoanAmount();
-        businesstype = ipCreditRatingState.getState().getData().getBusinessType();
+		progressTracker.setCurrentStep(CREDIT_SCORE_REQUESTED);
 
-        progressTracker.setCurrentStep(CREDIT_SCORE_REQUESTED);
+		creditScore = 0.0 + (10.0 - 0.0) * creditScoreRandom.nextDouble();
 
-        creditScore = 0.0 + (10.0 - 0.0) * creditScoreRandom.nextDouble();
+		if (creditScore > 7.5)
+			creditScoreDesc = CreditScoreDesc.GOOD;
+		else if (creditScore > 5.0)
+			creditScoreDesc = CreditScoreDesc.FAIR;
+		else
+			creditScoreDesc = CreditScoreDesc.POOR;
 
-        if (creditScore > 7.5) creditScoreDesc = CreditScoreDesc.GOOD;
-        else if (creditScore > 5.0) creditScoreDesc = CreditScoreDesc.FAIR;
-        else creditScoreDesc = CreditScoreDesc.POOR;
+		CreditRatingState creditState = new CreditRatingState(financeNode, financeAgency, companyName, businesstype,
+				loanAmount, creditScore, creditScoreDesc, creditCheckApplicationId);
 
-        CreditRatingState creditState = new CreditRatingState(financeNode, financeAgency, companyName, businesstype, loanAmount, creditScore, creditScoreDesc, creditCheckApplicationId);
+		final Command<CreditRatingCheckContract.Commands.CreditCheckProcessed> creditScoreCheckRequestCommand = new Command<>(
+				new CreditRatingCheckContract.Commands.CreditCheckProcessed(),
+				Arrays.asList(creditState.getCreditAgencyNode().getOwningKey(),
+						creditState.getLoaningAgency().getOwningKey()));
 
-        final Command<CreditRatingCheckContract.Commands.CreditCheckProcessed> creditScoreCheckRequestCommand = new Command<>(new CreditRatingCheckContract.Commands.CreditCheckProcessed(),
-                Arrays.asList(creditState.getCreditAgencyNode().getOwningKey(), creditState.getLoaningAgency().getOwningKey()));
+		final TransactionBuilder txBuilder = new TransactionBuilder(notary).addInputState(ipCreditRatingState)
+				.addOutputState(creditState).addCommand(creditScoreCheckRequestCommand);
 
-        final TransactionBuilder txBuilder = new TransactionBuilder(notary).addInputState(ipCreditRatingState)
-                .addOutputState(creditState)
-                .addCommand(creditScoreCheckRequestCommand);
+		txBuilder.verify(getServiceHub());
+		LOG.info("Credit Score request check initiated with Verification ID : " + creditCheckApplicationId.toString());
+		progressTracker.setCurrentStep(CONTRACT_VERIFICATION);
 
-        txBuilder.verify(getServiceHub());
-        LOG.info("Credit Score request check initiated with Verification ID : " + creditCheckApplicationId.toString());
-        progressTracker.setCurrentStep(CONTRACT_VERIFICATION);
+		final SignedTransaction signTx = getServiceHub().signInitialTransaction(txBuilder);
 
-        final SignedTransaction signTx = getServiceHub().signInitialTransaction(txBuilder);
+		progressTracker.setCurrentStep(SIGNING_TRANSACTION);
 
-        progressTracker.setCurrentStep(SIGNING_TRANSACTION);
+		FlowSession otherPartySession = initiateFlow(financeAgency);
+		final SignedTransaction fullySignedTx = subFlow(new CollectSignaturesFlow(signTx,
+				Arrays.asList(otherPartySession), CollectSignaturesFlow.Companion.tracker()));
+		progressTracker.setCurrentStep(COLLECTING_SIGNATURE);
 
-        FlowSession otherPartySession = initiateFlow(financeAgency);
-        final SignedTransaction fullySignedTx = subFlow(new CollectSignaturesFlow(signTx, Arrays.asList(otherPartySession), CollectSignaturesFlow.Companion.tracker()));
-        progressTracker.setCurrentStep(COLLECTING_SIGNATURE);
+		progressTracker.setCurrentStep(FINALISING_TRANSACTION);
 
-        progressTracker.setCurrentStep(FINALISING_TRANSACTION);
-
-        return subFlow(new FinalityFlow(fullySignedTx));
-    }
+		return subFlow(new FinalityFlow(fullySignedTx));
+	}
 }
-
 
 @InitiatedBy(CreditCheckProcessingFlow.class)
 class CreditScoreProcessingAcceptor extends FlowLogic<SignedTransaction> {
-    private static final Logger LOG = LoggerFactory.getLogger(CreditScoreProcessingAcceptor.class.getName());
-    final FlowSession otherPartyFlow;
+	private static final Logger LOG = LoggerFactory.getLogger(CreditScoreProcessingAcceptor.class.getName());
+	final FlowSession otherPartyFlow;
 
-    public CreditScoreProcessingAcceptor(FlowSession otherPartyFlow) {
-        this.otherPartyFlow = otherPartyFlow;
-    }
+	public CreditScoreProcessingAcceptor(FlowSession otherPartyFlow) {
+		this.otherPartyFlow = otherPartyFlow;
+	}
 
-    @Override
-    @Suspendable
-    public SignedTransaction call() throws FlowException {
-        class SignTxFlow extends SignTransactionFlow {
-            public SignTxFlow(FlowSession otherSideSession, ProgressTracker progressTracker) {
-                super(otherSideSession, progressTracker);
-            }
+	@Override
+	@Suspendable
+	public SignedTransaction call() throws FlowException {
+		class SignTxFlow extends SignTransactionFlow {
+			public SignTxFlow(FlowSession otherSideSession, ProgressTracker progressTracker) {
+				super(otherSideSession, progressTracker);
+			}
 
-            @Override
-            protected void checkTransaction(SignedTransaction stx) throws FlowException {
-                requireThat(require -> {
-                    ContractState output = stx.getTx().getOutputs().get(0).getData();
-                    require.using("This must be a transaction between bank and finance Agency (LoanRequestState transaction).", output instanceof CreditRatingState);
-                    return null;
-                });
-            }
-        }
-        LOG.info("##### Accepting Credit state signed request");
-        return subFlow(new SignTxFlow(otherPartyFlow, SignTransactionFlow.Companion.tracker()));
-    }
+			@Override
+			protected void checkTransaction(SignedTransaction stx) throws FlowException {
+				requireThat(require -> {
+					ContractState output = stx.getTx().getOutputs().get(0).getData();
+					require.using(
+							"This must be a transaction between bank and finance Agency (LoanRequestState transaction).",
+							output instanceof CreditRatingState);
+					return null;
+				});
+			}
+		}
+		LOG.info("##### Accepting Credit state signed request");
+		return subFlow(new SignTxFlow(otherPartyFlow, SignTransactionFlow.Companion.tracker()));
+	}
 }
-
-
-
-
