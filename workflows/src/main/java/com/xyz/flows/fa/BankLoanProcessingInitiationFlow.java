@@ -68,82 +68,80 @@ public class BankLoanProcessingInitiationFlow extends FlowLogic<SignedTransactio
     @Override
     @Suspendable
     public SignedTransaction call() throws FlowException {
-        SignedTransaction fullySignedTx = null;
         LOG.info("##### Started Request for CreditCheck flow");
+        final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
+        Party financeNode = getServiceHub().getMyInfo().getLegalIdentities().get(0);
+
+        String companyName = null;
+        Long loanAmount = null;
+        String businesstype = null;
+        CreditScoreDesc creditScoreDesc = null;
+        UniqueIdentifier bankProcessingId = new UniqueIdentifier();
+
+        QueryCriteria criteriaApplicationState = new QueryCriteria.LinearStateQueryCriteria(
+                null,
+                Arrays.asList(loanApplicationId),
+                Vault.StateStatus.UNCONSUMED,
+                null);
+
+        List<StateAndRef<LoanApplicationState>> inputStateList = getServiceHub().getVaultService().queryBy(LoanApplicationState.class, criteriaApplicationState).getStates();
+        StateAndRef<LoanApplicationState> ipLoanApplicationState = null;
+
+        if (inputStateList == null || inputStateList.isEmpty()) {
+            LOG.error("Application State Cannot be found : " + inputStateList.size() + " " + loanApplicationId.toString());
+            throw new IllegalArgumentException("Application State Cannot be found : " + inputStateList.size() + " " + loanApplicationId.toString());
+        } else {
+            LOG.info("Application State queried from Vault : " + inputStateList.size() + " " + loanApplicationId.toString());
+            ipLoanApplicationState = inputStateList.get(0);
+        }
+
+        final LoanApplicationState laState = ipLoanApplicationState.getState().getData();
+        QueryCriteria creditVerficationIdCustomQuery = null;
         try {
-            final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
-            Party financeNode = getServiceHub().getMyInfo().getLegalIdentities().get(0);
-
-            String companyName = null;
-            Long loanAmount = null;
-            String businesstype = null;
-            CreditScoreDesc creditScoreDesc = null;
-            UniqueIdentifier bankProcessingId = new UniqueIdentifier();
-
-            QueryCriteria criteriaApplicationState = new QueryCriteria.LinearStateQueryCriteria(
-                    null,
-                    Arrays.asList(loanApplicationId),
-                    Vault.StateStatus.UNCONSUMED,
-                    null);
-
-            List<StateAndRef<LoanApplicationState>> inputStateList = getServiceHub().getVaultService().queryBy(LoanApplicationState.class, criteriaApplicationState).getStates();
-            StateAndRef<LoanApplicationState> ipLoanApplicationState = null;
-
-            if (inputStateList == null || inputStateList.isEmpty()) {
-                LOG.error("Application State Cannot be found : " + inputStateList.size() + " " + loanApplicationId.toString());
-                throw new IllegalArgumentException("Application State Cannot be found : " + inputStateList.size() + " " + loanApplicationId.toString());
-            } else {
-                LOG.info("Application State queried from Vault : " + inputStateList.size() + " " + loanApplicationId.toString());
-                ipLoanApplicationState = inputStateList.get(0);
-            }
-
-            final LoanApplicationState laState = ipLoanApplicationState.getState().getData();
-
-            QueryCriteria creditVerficationIdCustomQuery = new QueryCriteria.VaultCustomQueryCriteria(
+            creditVerficationIdCustomQuery = new QueryCriteria.VaultCustomQueryCriteria(
                     Builder.equal(QueryCriteriaUtils.getField("loanVerificationId",
                             LoaningProcessSchemas.PersistentCreditRatingSchema.class), laState.getLoanVerificationId().getId()));
-            List<StateAndRef<CreditRatingState>> vaultCreditRatingStates = getServiceHub().getVaultService().
-                    queryBy(CreditRatingState.class, creditVerficationIdCustomQuery).getStates();
-
-            CreditRatingState ratingState = vaultCreditRatingStates.get(0).getState().getData();
-
-            companyName = ipLoanApplicationState.getState().getData().getCompanyName();
-            loanAmount = ipLoanApplicationState.getState().getData().getLoanAmount();
-            businesstype = ipLoanApplicationState.getState().getData().getBusinessType();
-            creditScoreDesc = ratingState.getCreditScoreDesc();
-
-            progressTracker.setCurrentStep(BANK_PROCESSING_INITIATED);
-
-            BankFinanceState bankFinanceState = new BankFinanceState(financeNode, bankNode, companyName, businesstype, loanAmount,
-                    creditScoreDesc, BankProcessingStatus.IN_PROCESSING, bankProcessingId);
-
-            final Command<BankFinanceValidationContract.Commands.BankProcessingInitiated> bankProcessingCommand =
-                    new Command<BankFinanceValidationContract.Commands.BankProcessingInitiated>(new BankFinanceValidationContract.Commands.BankProcessingInitiated(),
-                            Arrays.asList(bankFinanceState.getFinanceAgencyNode().getOwningKey(), bankFinanceState.getBankNode().getOwningKey()));
-
-            final TransactionBuilder txBuilder = new TransactionBuilder(notary)
-                    .addOutputState(bankFinanceState)
-                    .addCommand(bankProcessingCommand);
-
-            txBuilder.verify(getServiceHub());
-            LOG.info("Bank processing initiated : " + bankProcessingId.toString());
-            progressTracker.setCurrentStep(CONTRACT_VERIFICATION);
-
-            final SignedTransaction signTx = getServiceHub().signInitialTransaction(txBuilder);
-
-            progressTracker.setCurrentStep(SIGNING_TRANSACTION);
-
-            FlowSession otherPartySession = initiateFlow(bankNode);
-            fullySignedTx = subFlow(new CollectSignaturesFlow(signTx, Arrays.asList(otherPartySession), CollectSignaturesFlow.Companion.tracker()));
-            progressTracker.setCurrentStep(COLLECTING_SIGNATURE);
-
-            progressTracker.setCurrentStep(FINALISING_TRANSACTION);
-
-            return subFlow(new FinalityFlow(fullySignedTx));
         } catch (Exception e) {
-            LOG.error("Error Occurred while processing LoanApplicationFlow" + e.getMessage());
             e.printStackTrace();
+            throw new FlowException("Field name loanVerificationId does not exist in PersistentCreditRatingSchema class , " + e.getMessage());
         }
+        List<StateAndRef<CreditRatingState>> vaultCreditRatingStates = getServiceHub().getVaultService().
+                queryBy(CreditRatingState.class, creditVerficationIdCustomQuery).getStates();
+
+        CreditRatingState ratingState = vaultCreditRatingStates.get(0).getState().getData();
+
+        companyName = ipLoanApplicationState.getState().getData().getCompanyName();
+        loanAmount = ipLoanApplicationState.getState().getData().getLoanAmount();
+        businesstype = ipLoanApplicationState.getState().getData().getBusinessType();
+        creditScoreDesc = ratingState.getCreditScoreDesc();
+
+        progressTracker.setCurrentStep(BANK_PROCESSING_INITIATED);
+
+        BankFinanceState bankFinanceState = new BankFinanceState(financeNode, bankNode, companyName, businesstype, loanAmount,
+                creditScoreDesc, BankProcessingStatus.IN_PROCESSING, bankProcessingId);
+
+        final Command<BankFinanceValidationContract.Commands.BankProcessingInitiated> bankProcessingCommand =
+                new Command<BankFinanceValidationContract.Commands.BankProcessingInitiated>(new BankFinanceValidationContract.Commands.BankProcessingInitiated(),
+                        Arrays.asList(bankFinanceState.getFinanceAgencyNode().getOwningKey(), bankFinanceState.getBankNode().getOwningKey()));
+
+        final TransactionBuilder txBuilder = new TransactionBuilder(notary)
+                .addOutputState(bankFinanceState)
+                .addCommand(bankProcessingCommand);
+
+        txBuilder.verify(getServiceHub());
+        LOG.info("Bank processing initiated : " + bankProcessingId.toString());
+        progressTracker.setCurrentStep(CONTRACT_VERIFICATION);
+
+        final SignedTransaction signTx = getServiceHub().signInitialTransaction(txBuilder);
+
+        progressTracker.setCurrentStep(SIGNING_TRANSACTION);
+
+        FlowSession otherPartySession = initiateFlow(bankNode);
+        SignedTransaction fullySignedTx = subFlow(new CollectSignaturesFlow(signTx, Arrays.asList(otherPartySession), CollectSignaturesFlow.Companion.tracker()));
+        progressTracker.setCurrentStep(COLLECTING_SIGNATURE);
+
+        progressTracker.setCurrentStep(FINALISING_TRANSACTION);
+
         return subFlow(new FinalityFlow(fullySignedTx));
     }
 }

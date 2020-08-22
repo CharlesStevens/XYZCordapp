@@ -96,136 +96,150 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
     }
 
     @Override
+    @Suspendable
     public SignedTransaction call() throws FlowException {
-        SignedTransaction singTransaction = null;
-        try {
-            LOG.info("Started Loan request creating/update");
-            final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
-            Party financeParty = getServiceHub().getMyInfo().getLegalIdentities().get(0);
-            LoanApplicationState opLoanApplicationState = null;
-            StateAndRef<LoanApplicationState> ipLoanApplicationState = null;
-            TransactionBuilder txBuilder = null;
+        LOG.info("Started Loan request creating/update");
+        final Party notary = getServiceHub().getNetworkMapCache().getNotaryIdentities().get(0);
+        Party financeParty = getServiceHub().getMyInfo().getLegalIdentities().get(0);
+        LoanApplicationState opLoanApplicationState = null;
+        StateAndRef<LoanApplicationState> ipLoanApplicationState = null;
+        TransactionBuilder txBuilder = null;
 
-            if (applicationStatus == null && scoreDesc == null && bankProcessingStatus == null) {
-                opLoanApplicationState = new LoanApplicationState(financeParty, companyName, businesstype, loanAmount,
-                        LoanApplicationStatus.APPLIED, new UniqueIdentifier(), null, null);
-                Command<LoanApplicationContract.Commands.LoanApplied> loanAppliedCommand = new Command<>(
-                        new LoanApplicationContract.Commands.LoanApplied(),
-                        Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
+        if (applicationStatus == null && scoreDesc == null && bankProcessingStatus == null) {
+            opLoanApplicationState = new LoanApplicationState(financeParty, companyName, businesstype, loanAmount,
+                    LoanApplicationStatus.APPLIED, new UniqueIdentifier(), null, null);
+            Command<LoanApplicationContract.Commands.LoanApplied> loanAppliedCommand = new Command<>(
+                    new LoanApplicationContract.Commands.LoanApplied(),
+                    Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
 
-                txBuilder = new TransactionBuilder(notary).addOutputState(opLoanApplicationState)
-                        .addCommand(loanAppliedCommand);
+            txBuilder = new TransactionBuilder(notary).addOutputState(opLoanApplicationState)
+                    .addCommand(loanAppliedCommand);
 
-            } else if (this.scoreDesc == null && bankProcessingStatus == null) {
-                QueryCriteria criteriaApplicationState = new QueryCriteria.LinearStateQueryCriteria(null,
-                        Arrays.asList(loanApplicationId), Vault.StateStatus.UNCONSUMED, null);
+        } else if (this.scoreDesc == null && bankProcessingStatus == null) {
+            QueryCriteria criteriaApplicationState = new QueryCriteria.LinearStateQueryCriteria(null,
+                    Arrays.asList(loanApplicationId), Vault.StateStatus.UNCONSUMED, null);
 
-                List<StateAndRef<LoanApplicationState>> inputStateList = getServiceHub().getVaultService()
-                        .queryBy(LoanApplicationState.class, criteriaApplicationState).getStates();
-                LoanApplicationState vaultApplicationState = null;
+            List<StateAndRef<LoanApplicationState>> inputStateList = getServiceHub().getVaultService()
+                    .queryBy(LoanApplicationState.class, criteriaApplicationState).getStates();
+            LoanApplicationState vaultApplicationState = null;
 
-                if (inputStateList == null || inputStateList.isEmpty()) {
-                    LOG.error("Application State Cannot be found : " + inputStateList.size() + " "
-                            + loanApplicationId.toString());
-                    throw new IllegalArgumentException("Application State Cannot be found : " + inputStateList.size() + " "
-                            + loanApplicationId.toString());
-                } else {
-                    LOG.info("Application State queried from Vault : " + inputStateList.size() + " "
-                            + loanApplicationId.toString());
-                    vaultApplicationState = inputStateList.get(0).getState().getData();
-                }
+            if (inputStateList == null || inputStateList.isEmpty()) {
+                LOG.error("Application State Cannot be found : " + inputStateList.size() + " "
+                        + loanApplicationId.toString());
+                throw new IllegalArgumentException("Application State Cannot be found : " + inputStateList.size() + " "
+                        + loanApplicationId.toString());
+            } else {
+                LOG.info("Application State queried from Vault : " + inputStateList.size() + " "
+                        + loanApplicationId.toString());
+                vaultApplicationState = inputStateList.get(0).getState().getData();
+            }
 
-                ipLoanApplicationState = inputStateList.get(0);
-                vaultApplicationState.setLoanVerificationId(creditCheckApplicationId);
-                vaultApplicationState.setApplicationStatus(LoanApplicationStatus.FORWARDED_TO_CREDIT_CHECK_AGENCY);
-                opLoanApplicationState = vaultApplicationState;
-                Command<LoanApplicationContract.Commands.LoanForwardedToCreditCheck> loanAppliedCommand = new Command<>(
-                        new LoanApplicationContract.Commands.LoanForwardedToCreditCheck(),
-                        Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
+            ipLoanApplicationState = inputStateList.get(0);
+            vaultApplicationState.setLoanVerificationId(creditCheckApplicationId);
+            vaultApplicationState.setApplicationStatus(LoanApplicationStatus.FORWARDED_TO_CREDIT_CHECK_AGENCY);
+            opLoanApplicationState = vaultApplicationState;
+            Command<LoanApplicationContract.Commands.LoanForwardedToCreditCheck> loanAppliedCommand = new Command<>(
+                    new LoanApplicationContract.Commands.LoanForwardedToCreditCheck(),
+                    Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
 
-                txBuilder = new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
-                        .addOutputState(opLoanApplicationState).addCommand(loanAppliedCommand);
-            } else if (creditCheckApplicationId != null && scoreDesc != null && bankProcessingStatus == null) {
-                QueryCriteria creditVerficationIdCustomQuery = new QueryCriteria.VaultCustomQueryCriteria(
+            txBuilder = new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
+                    .addOutputState(opLoanApplicationState).addCommand(loanAppliedCommand);
+        } else if (creditCheckApplicationId != null && scoreDesc != null && bankProcessingStatus == null) {
+            QueryCriteria creditVerficationIdCustomQuery = null;
+            try {
+                creditVerficationIdCustomQuery = new QueryCriteria.VaultCustomQueryCriteria(
                         Builder.equal(QueryCriteriaUtils.getField("loanVerificationId",
                                 LoaningProcessSchemas.PersistentLoanApplicationState.class), creditCheckApplicationId.getId()));
-                List<StateAndRef<LoanApplicationState>> laonApplicationStates = getServiceHub().getVaultService().
-                        queryBy(LoanApplicationState.class, creditVerficationIdCustomQuery).getStates();
+            } catch (Exception e) {
+                e.printStackTrace();
+                throw new FlowException("Field name loanVerificationId does not exist in PersistentLoanApplicationState class , " + e.getMessage());
+            }
+            List<StateAndRef<LoanApplicationState>> laonApplicationStates = getServiceHub().getVaultService().
+                    queryBy(LoanApplicationState.class, creditVerficationIdCustomQuery).getStates();
 
-                StateAndRef<LoanApplicationState> inputState = laonApplicationStates.stream().filter(t -> t.getState().getData()
-                        .getLoanVerificationId().toString().equals(creditCheckApplicationId.toString())).findAny().get();
-                LoanApplicationState vaultApplicationState = inputState.getState().getData();
+            StateAndRef<LoanApplicationState> inputState = laonApplicationStates.stream().filter(t -> t.getState().getData()
+                    .getLoanVerificationId().toString().equals(creditCheckApplicationId.toString())).findAny().get();
+            LoanApplicationState vaultApplicationState = inputState.getState().getData();
 
-                ipLoanApplicationState = inputState;
-                if (scoreDesc.equals(CreditScoreDesc.GOOD) || scoreDesc.equals(CreditScoreDesc.FAIR))
-                    vaultApplicationState.setApplicationStatus(LoanApplicationStatus.CREDIT_SCORE_CHECK_PASS);
-                else
-                    vaultApplicationState.setApplicationStatus(LoanApplicationStatus.CREDIT_SCORE_CHECK_FAILED);
-                opLoanApplicationState = vaultApplicationState;
+            ipLoanApplicationState = inputState;
+            if (scoreDesc.equals(CreditScoreDesc.GOOD) || scoreDesc.equals(CreditScoreDesc.FAIR))
+                vaultApplicationState.setApplicationStatus(LoanApplicationStatus.CREDIT_SCORE_CHECK_PASS);
+            else
+                vaultApplicationState.setApplicationStatus(LoanApplicationStatus.CREDIT_SCORE_CHECK_FAILED);
+            opLoanApplicationState = vaultApplicationState;
 
-                Command<LoanApplicationContract.Commands.LoanProcesedFromCreditCheck> loanProcessedForCreditCheckCommand = new Command<>(
-                        new LoanApplicationContract.Commands.LoanProcesedFromCreditCheck(),
-                        Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
+            Command<LoanApplicationContract.Commands.LoanProcesedFromCreditCheck> loanProcessedForCreditCheckCommand = new Command<>(
+                    new LoanApplicationContract.Commands.LoanProcesedFromCreditCheck(),
+                    Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
 
-                txBuilder = new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
-                        .addOutputState(opLoanApplicationState).addCommand(loanProcessedForCreditCheckCommand);
+            txBuilder = new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
+                    .addOutputState(opLoanApplicationState).addCommand(loanProcessedForCreditCheckCommand);
 
-            } else if (bankProcessingId != null && bankProcessingStatus != null) {
-                StateAndRef<LoanApplicationState> inputState = null;
-                if (bankProcessingStatus == BankProcessingStatus.IN_PROCESSING) {
-                    QueryCriteria creditVerficationIdCustomQuery = new QueryCriteria.VaultCustomQueryCriteria(
-                            Builder.equal(QueryCriteriaUtils.getField("loanVerificationId",
+        } else if (bankProcessingId != null && bankProcessingStatus != null) {
+            StateAndRef<LoanApplicationState> inputState = null;
+            LOG.info("##### Bank processing Sttus : " + bankProcessingStatus.toString() + " loanApplicationID : " +
+                    (loanApplicationId == null ? "" : loanApplicationId.getId().toString()) + " bankApplicationId : " +
+                    (bankProcessingId == null ? "" : bankProcessingId.getId().toString()));
+            if (bankProcessingStatus == BankProcessingStatus.IN_PROCESSING) {
+                QueryCriteria loanStateCustomQuery = null;
+                try {
+                    loanStateCustomQuery = new QueryCriteria.VaultCustomQueryCriteria(
+                            Builder.equal(QueryCriteriaUtils.getField("loanApplicationId",
                                     LoaningProcessSchemas.PersistentLoanApplicationState.class), loanApplicationId.getId()));
-                    inputState = getServiceHub().getVaultService().
-                            queryBy(LoanApplicationState.class, creditVerficationIdCustomQuery).getStates().get(0);
-                } else {
-                    QueryCriteria creditVerficationIdCustomQuery = new QueryCriteria.VaultCustomQueryCriteria(
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    throw new FlowException("Field name loanApplicationId does not exist in PersistentLoanApplicationState class , " + e.getMessage());
+                }
+                inputState = getServiceHub().getVaultService().
+                        queryBy(LoanApplicationState.class, loanStateCustomQuery).getStates().get(0);
+            } else {
+                QueryCriteria creditVerficationIdCustomQuery = null;
+                try {
+                    creditVerficationIdCustomQuery = new QueryCriteria.VaultCustomQueryCriteria(
                             Builder.equal(QueryCriteriaUtils.getField("bankProcessingId",
                                     LoaningProcessSchemas.PersistentLoanApplicationState.class), bankProcessingId.getId()));
-                    inputState = getServiceHub().getVaultService().
-                            queryBy(LoanApplicationState.class, creditVerficationIdCustomQuery).getStates().get(0);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    throw new FlowException("Field name bankProcessingId does not exist in PersistentLoanApplicationState class , " + e.getMessage());
                 }
-
-                LoanApplicationState vaultApplicationState = inputState.getState().getData();
-                ipLoanApplicationState = inputState;
-                Command<CommandData> commandData = null;
-
-                if (bankProcessingStatus.equals(BankProcessingStatus.IN_PROCESSING)) {
-                    vaultApplicationState.setBankProcessingId(bankProcessingId);
-                    vaultApplicationState.setApplicationStatus(LoanApplicationStatus.FORWARDED_TO_BANK);
-                    opLoanApplicationState = vaultApplicationState;
-
-                    commandData = new Command<>(new LoanApplicationContract.Commands.LoanApplicationForwaredToBank(),
-                            Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
-                } else {
-                    if (bankProcessingStatus.equals(BankProcessingStatus.PROCESSED)) {
-                        vaultApplicationState.setApplicationStatus(LoanApplicationStatus.LOAN_DISBURSED);
-                    } else {
-                        vaultApplicationState.setApplicationStatus(LoanApplicationStatus.REJECTED_FROM_BANK);
-                    }
-
-                    opLoanApplicationState = vaultApplicationState;
-                    commandData = new Command<>(new LoanApplicationContract.Commands.LoanProcessedFromBank(),
-                            Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
-                }
-
-                txBuilder = new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
-                        .addOutputState(opLoanApplicationState).addCommand(commandData);
+                inputState = getServiceHub().getVaultService().
+                        queryBy(LoanApplicationState.class, creditVerficationIdCustomQuery).getStates().get(0);
             }
-            progressTracker.setCurrentStep(LOAN_REQUESTED);
 
-            txBuilder.verify(getServiceHub());
+            LoanApplicationState vaultApplicationState = inputState.getState().getData();
+            ipLoanApplicationState = inputState;
+            Command<CommandData> commandData = null;
 
-            progressTracker.setCurrentStep(LOAN_VERIFICATION);
+            if (bankProcessingStatus.equals(BankProcessingStatus.IN_PROCESSING)) {
+                vaultApplicationState.setBankProcessingId(bankProcessingId);
+                vaultApplicationState.setApplicationStatus(LoanApplicationStatus.FORWARDED_TO_BANK);
+                opLoanApplicationState = vaultApplicationState;
 
-            singTransaction = getServiceHub().signInitialTransaction(txBuilder);
+                commandData = new Command<>(new LoanApplicationContract.Commands.LoanApplicationForwaredToBank(),
+                        Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
+            } else {
+                if (bankProcessingStatus.equals(BankProcessingStatus.PROCESSED)) {
+                    vaultApplicationState.setApplicationStatus(LoanApplicationStatus.LOAN_DISBURSED);
+                } else {
+                    vaultApplicationState.setApplicationStatus(LoanApplicationStatus.REJECTED_FROM_BANK);
+                }
+                opLoanApplicationState = vaultApplicationState;
+                commandData = new Command<>(new LoanApplicationContract.Commands.LoanProcessedFromBank(),
+                        Arrays.asList(opLoanApplicationState.getFinanceAgencyNode().getOwningKey()));
+            }
 
-            progressTracker.setCurrentStep(SIGNING_TRANSACTION);
-            return subFlow(new FinalityFlow(singTransaction));
-        } catch (Exception e) {
-            LOG.error("Error Occurred while processing LoanApplicationFlow" + e.getMessage());
-            e.printStackTrace();
+            txBuilder = new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
+                    .addOutputState(opLoanApplicationState).addCommand(commandData);
         }
+        progressTracker.setCurrentStep(LOAN_REQUESTED);
+
+        txBuilder.verify(getServiceHub());
+
+        progressTracker.setCurrentStep(LOAN_VERIFICATION);
+
+        SignedTransaction singTransaction = getServiceHub().signInitialTransaction(txBuilder);
+
+        progressTracker.setCurrentStep(SIGNING_TRANSACTION);
         return subFlow(new FinalityFlow(singTransaction));
     }
 }
