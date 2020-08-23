@@ -33,7 +33,6 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
     private String companyName;
     private String businesstype;
     private Long loanAmount;
-    private LoanApplicationStatus applicationStatus;
     private UniqueIdentifier loanApplicationId;
     private UniqueIdentifier creditCheckApplicationId;
     private UniqueIdentifier bankProcessingId;
@@ -42,32 +41,35 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
     private CreditScoreDesc scoreDesc;
 
     public LoanApplicationCreationFlow(String companyName, String businessType, Long loanAmount) {
+        // #1
         this.companyName = companyName;
         this.loanAmount = loanAmount;
         this.businesstype = businessType;
-
     }
 
-    public LoanApplicationCreationFlow(LoanApplicationStatus applicationStatus, UniqueIdentifier loanApplicationId,
+    public LoanApplicationCreationFlow(UniqueIdentifier loanApplicationId,
                                        UniqueIdentifier creditCheckApplicationId) {
+        // #2
         this.loanApplicationId = loanApplicationId;
         this.creditCheckApplicationId = creditCheckApplicationId;
-        this.applicationStatus = applicationStatus;
     }
 
     public LoanApplicationCreationFlow(UniqueIdentifier creditCheckApplicationId, CreditScoreDesc scoreDesc) {
+        // #3
         this.creditCheckApplicationId = creditCheckApplicationId;
         this.scoreDesc = scoreDesc;
     }
 
     public LoanApplicationCreationFlow(UniqueIdentifier bankProcessingId, UniqueIdentifier loanApplicationId,
                                        BankProcessingStatus bankProcessingStatus) {
+        // #4
         this.bankProcessingId = bankProcessingId;
         this.loanApplicationId = loanApplicationId;
         this.bankProcessingStatus = bankProcessingStatus;
     }
 
     public LoanApplicationCreationFlow(UniqueIdentifier bankProcessingId, BankProcessingStatus bankProcessingStatus) {
+        // #5
         this.bankProcessingId = bankProcessingId;
         this.bankProcessingStatus = bankProcessingStatus;
     }
@@ -105,7 +107,8 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
         StateAndRef<LoanApplicationState> ipLoanApplicationState = null;
         TransactionBuilder txBuilder = null;
 
-        if (applicationStatus == null && scoreDesc == null && bankProcessingStatus == null) {
+        if (companyName != null || businesstype != null || loanAmount != null) {
+            // #1
             opLoanApplicationState = new LoanApplicationState(financeParty, companyName, businesstype, loanAmount,
                     LoanApplicationStatus.APPLIED, new UniqueIdentifier(), null, null);
             Command<LoanApplicationContract.Commands.LoanApplied> loanAppliedCommand = new Command<>(
@@ -115,7 +118,8 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
             txBuilder = new TransactionBuilder(notary).addOutputState(opLoanApplicationState)
                     .addCommand(loanAppliedCommand);
 
-        } else if (this.scoreDesc == null && bankProcessingStatus == null) {
+        } else if (this.loanApplicationId != null && this.creditCheckApplicationId != null) {
+            // #2
             QueryCriteria criteriaApplicationState = new QueryCriteria.LinearStateQueryCriteria(null,
                     Arrays.asList(loanApplicationId), Vault.StateStatus.UNCONSUMED, null);
 
@@ -144,7 +148,8 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
 
             txBuilder = new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
                     .addOutputState(opLoanApplicationState).addCommand(loanAppliedCommand);
-        } else if (creditCheckApplicationId != null && scoreDesc != null && bankProcessingStatus == null) {
+        } else if (this.scoreDesc != null) {
+            // #3
             QueryCriteria creditVerficationIdCustomQuery = null;
             try {
                 creditVerficationIdCustomQuery = new QueryCriteria.VaultCustomQueryCriteria(
@@ -175,7 +180,7 @@ public class LoanApplicationCreationFlow extends FlowLogic<SignedTransaction> {
             txBuilder = new TransactionBuilder(notary).addInputState(ipLoanApplicationState)
                     .addOutputState(opLoanApplicationState).addCommand(loanProcessedForCreditCheckCommand);
 
-        } else if (bankProcessingId != null && bankProcessingStatus != null) {
+        } else if (bankProcessingStatus != null) {
             StateAndRef<LoanApplicationState> inputState = null;
             LOG.info("##### Bank processing Sttus : " + bankProcessingStatus.toString() + " loanApplicationID : " +
                     (loanApplicationId == null ? "" : loanApplicationId.getId().toString()) + " bankApplicationId : " +
