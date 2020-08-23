@@ -3,15 +3,16 @@ package com.xyz.webserver.ca;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.xyz.constants.CreditScoreDesc;
 import com.xyz.observer.ca.CACreditScoreCheckStateObserver;
+import com.xyz.processor.ca.CACreditScoreCheckProcessor;
 import com.xyz.states.CreditRatingState;
 import com.xyz.states.schema.LoaningProcessSchemas;
+import com.xyz.webserver.data.ControllerRequest;
 import com.xyz.webserver.data.ControllerStatusResponse;
-import com.xyz.webserver.data.CreditCheckRatings;
-import com.xyz.webserver.data.CreditRatingStatusResponse;
 import com.xyz.webserver.data.LoanApplicationException;
 import com.xyz.webserver.util.NodeRPCConnection;
 import net.corda.client.jackson.JacksonSupport;
 import net.corda.core.contracts.StateAndRef;
+import net.corda.core.contracts.UniqueIdentifier;
 import net.corda.core.identity.CordaX500Name;
 import net.corda.core.messaging.CordaRPCOps;
 import net.corda.core.node.services.vault.Builder;
@@ -26,15 +27,10 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import javax.annotation.PostConstruct;
+import java.util.*;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
 
@@ -48,15 +44,19 @@ public class CreditAgencyController {
     @Value("${disable.observers}")
     private boolean disableObservers;
 
-    public CreditAgencyController(NodeRPCConnection rpc) {
-        this.proxy = rpc.getproxy();
-        this.me = proxy.nodeInfo().getLegalIdentities().get(0).getName();
-
+    @PostConstruct
+    public void init() {
+        logger.info("Disable Observers property value : " + disableObservers);
         if (!disableObservers) {
             Thread creditObserverThread = new Thread(
                     () -> new CACreditScoreCheckStateObserver(proxy).observeCreditCheckApplication());
             creditObserverThread.start();
         }
+    }
+
+    public CreditAgencyController(NodeRPCConnection rpc) {
+        this.proxy = rpc.getproxy();
+        this.me = proxy.nodeInfo().getLegalIdentities().get(0).getName();
     }
 
     public String toDisplayString(X500Name name) {
@@ -79,46 +79,61 @@ public class CreditAgencyController {
     }
 
     @GetMapping(value = "fetchAllCreditProcessingStatuses")
-    private ResponseEntity<CreditRatingStatusResponse> requestAllStates() {
-        Map<String, CreditCheckRatings> financeStates = new HashMap<>();
+    private ResponseEntity<ControllerStatusResponse> requestAllStates() {
+        List<Map<String, String>> applicationStatus = new ArrayList<>();
         List<StateAndRef<CreditRatingState>> processingStates = proxy.vaultQuery(CreditRatingState.class).getStates();
         for (StateAndRef<CreditRatingState> stateRef : processingStates) {
             CreditRatingState financeState = stateRef.getState().getData();
             final String creditRatingDesc = financeState.getCreditScoreDesc() == CreditScoreDesc.UNSPECIFIED ? "DECISION_PENDING" : financeState.getCreditScoreDesc().toString();
             final String creditScores = financeState.getCreditScoreDesc() == CreditScoreDesc.UNSPECIFIED ? "DECISION_PENDING" : financeState.getCreditScoreCheckRating().toString();
-            financeStates.put(financeState.getLoanVerificationId().getId().toString(), new CreditCheckRatings(creditScores, creditRatingDesc));
+            applicationStatus.add(new HashMap<String, String>() {{
+                put(ControllerStatusResponse.CREDIT_CHECK_VERIFICATION_ID, financeState.getLoanVerificationId().getId().toString());
+                put(ControllerStatusResponse.CREDIT_SCORE, creditScores);
+                put(ControllerStatusResponse.CREDIT_SCORE_DESC, creditRatingDesc);
+            }});
         }
+
+        if (applicationStatus.isEmpty()) {
+            applicationStatus.add(new HashMap<String, String>() {{
+                put(ControllerStatusResponse.STATUS, "No Credit Check applications found in the system.");
+            }});
+        }
+
         return ResponseEntity.status(HttpStatus.OK)
-                .body(new CreditRatingStatusResponse(financeStates));
+                .body(new ControllerStatusResponse(applicationStatus));
     }
 
     @SuppressWarnings({"unchecked", "rawtypes"})
-    @GetMapping(value = "creditScoreStatus", produces = "application/json")
-    private ResponseEntity<Object> getStatusOfApplication(@RequestParam("creditVerficationId") String creditVerficationId) {
-
+    @PostMapping(value = "creditScoreProcessingStatus", produces = "application/json", consumes = "application/json")
+    private ResponseEntity<Object> getStatusOfApplication(@RequestBody ControllerRequest request) {
         QueryCriteria creditVerficationIdCustomQuery;
+        List<Map<String, String>> applicationStatus = new ArrayList<>();
         try {
             creditVerficationIdCustomQuery = new QueryCriteria.VaultCustomQueryCriteria(
                     Builder.equal(QueryCriteriaUtils.getField("loanVerificationId",
-                            LoaningProcessSchemas.PersistentCreditRatingSchema.class), UUID.fromString(creditVerficationId)));
+                            LoaningProcessSchemas.PersistentCreditRatingSchema.class), UUID.fromString(request.getApplicationID())));
             List<StateAndRef<CreditRatingState>> applicationStates = proxy
                     .vaultQueryByCriteria(creditVerficationIdCustomQuery, CreditRatingState.class).getStates();
 
-            if (applicationStates == null || applicationStates.size() == 0)
+            if (applicationStates == null || applicationStates.size() == 0) {
+                applicationStatus.add(new HashMap<String, String>() {{
+                    put(ControllerStatusResponse.CREDIT_CHECK_VERIFICATION_ID, request.getApplicationID());
+                    put(ControllerStatusResponse.STATUS, "Input CreditVerificationId doesnt exists in System.");
+                }});
                 return ResponseEntity.status(HttpStatus.OK)
-                        .body(new ControllerStatusResponse(new HashMap<String, String>() {{
-                            put(creditVerficationId, "Input CreditVerificationId doesnt exists in System.");
-                        }}));
-            else {
+                        .body(new ControllerStatusResponse(applicationStatus));
+            } else {
                 CreditScoreDesc scoreDesc = applicationStates.get(0).getState().getData().getCreditScoreDesc();
                 String verificationDescription = scoreDesc == CreditScoreDesc.UNSPECIFIED ? "IN_PROCESSING/PENDING VERIFICATION CHECK" :
                         applicationStates.get(0).getState().getData().getCreditScoreDesc().toString();
                 String creditScore = scoreDesc == CreditScoreDesc.UNSPECIFIED ? "NULL/DECISION_PENDING" : applicationStates.get(0).getState().getData().getCreditScoreCheckRating().toString();
+                applicationStatus.add(new HashMap<String, String>() {{
+                    put(ControllerStatusResponse.CREDIT_CHECK_VERIFICATION_ID, request.getApplicationID());
+                    put(ControllerStatusResponse.CREDIT_SCORE, creditScore);
+                    put(ControllerStatusResponse.CREDIT_SCORE_DESC, verificationDescription);
+                }});
                 return ResponseEntity.status(HttpStatus.OK)
-                        .body(new CreditRatingStatusResponse(
-                                new HashMap<String, CreditCheckRatings>() {{
-                                    put(creditVerficationId, new CreditCheckRatings(creditScore, verificationDescription));
-                                }}));
+                        .body(new ControllerStatusResponse(applicationStatus));
             }
         } catch (NoSuchFieldException e) {
             e.printStackTrace();
@@ -126,5 +141,27 @@ public class CreditAgencyController {
                     .body(new LoanApplicationException(e.getMessage()));
         }
 
+    }
+
+    @PostMapping(value = "initiateCreditCheckProcessing", produces = "application/json", consumes = "application/json")
+    private ResponseEntity<Object> initiateCreditCheckProcessing(@RequestBody ControllerRequest controllerRequest) {
+        try {
+            logger.info("HTTP REQUEST :Initiating CreditCheck processing  for CreditVerificationId : " + controllerRequest.getApplicationID());
+            List<Map<String, String>> applicationStatus = new ArrayList<>();
+
+            CACreditScoreCheckProcessor process = new CACreditScoreCheckProcessor(
+                    new UniqueIdentifier(null, UUID.fromString(controllerRequest.getApplicationID())), proxy);
+            String response = process.processCreditScoreCheck();
+
+            applicationStatus.add(new HashMap<String, String>() {{
+                put(ControllerStatusResponse.CREDIT_CHECK_VERIFICATION_ID, controllerRequest.getApplicationID());
+                put(ControllerStatusResponse.STATUS, response);
+            }});
+            logger.info("HTTP RESPONSE :Credit Check processed with response : " + response);
+            return ResponseEntity.status(HttpStatus.OK).body(new ControllerStatusResponse(applicationStatus));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(new LoanApplicationException(e.getMessage()));
+        }
     }
 }
