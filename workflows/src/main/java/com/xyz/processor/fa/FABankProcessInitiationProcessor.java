@@ -38,7 +38,7 @@ public class FABankProcessInitiationProcessor {
                     + bankState.getBankProcessingStatus().toString());
 
             SignedTransaction loanUpdateTx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class,
-                    bankState.getBankLoanProcessingId(), loanApplicationID)
+                    bankState.getBankLoanProcessingId(), loanApplicationID, bankState.getBankProcessingStatus())
                     .getReturnValue().get();
             LoanApplicationState laState = ((LoanApplicationState) loanUpdateTx.getTx().getOutputs().get(0).getData());
             logger.info("Processed Bank Process initiation with Bank processing ID: " + bankState.getBankLoanProcessingId().getId().toString());

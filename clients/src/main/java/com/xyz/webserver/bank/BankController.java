@@ -28,6 +28,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.PostConstruct;
 import java.util.*;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
@@ -40,16 +41,22 @@ public class BankController {
     private final CordaX500Name me;
 
     @Value("${disable.observers}")
-    private boolean disableObservers;
+    private String disableObservers;
 
-    public BankController(NodeRPCConnection rpc) {
-        this.proxy = rpc.getproxy();
-        this.me = proxy.nodeInfo().getLegalIdentities().get(0).getName();
-        if (!disableObservers) {
+    @PostConstruct
+    public void init(){
+        logger.info("Disable Observers property value : " + disableObservers);
+
+        if (disableObservers.equalsIgnoreCase("false")) {
             Thread bankProcessingRequestThread = new Thread(
                     () -> new BankLoanProcessingStateObserver(proxy).observeBankProcessingRequest());
             bankProcessingRequestThread.start();
         }
+    }
+
+    public BankController(NodeRPCConnection rpc) {
+        this.proxy = rpc.getproxy();
+        this.me = proxy.nodeInfo().getLegalIdentities().get(0).getName();
     }
 
     public String toDisplayString(X500Name name) {

@@ -3,6 +3,10 @@ package com.xyz.webserver.data;
 public class ControllerRequest {
     String applicationID;
 
+    public ControllerRequest() {
+
+    }
+
     public ControllerRequest(String applicationID) {
         this.applicationID = applicationID;
     }

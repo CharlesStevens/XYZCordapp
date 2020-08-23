@@ -2,18 +2,22 @@ package com.xyz.webserver.data;
 
 public class LoanApplicationException {
 
-	private String exceptionMessage;
+    private String exceptionMessage;
 
-	public LoanApplicationException(String exceptionMessage) {
-		this.exceptionMessage = exceptionMessage;
-	}
+    public LoanApplicationException() {
 
-	public String getExceptionMessage() {
-		return exceptionMessage;
-	}
+    }
 
-	public void setExceptionMessage(String exceptionMessage) {
-		this.exceptionMessage = exceptionMessage;
-	}
+    public LoanApplicationException(String exceptionMessage) {
+        this.exceptionMessage = exceptionMessage;
+    }
+
+    public String getExceptionMessage() {
+        return exceptionMessage;
+    }
+
+    public void setExceptionMessage(String exceptionMessage) {
+        this.exceptionMessage = exceptionMessage;
+    }
 
 }

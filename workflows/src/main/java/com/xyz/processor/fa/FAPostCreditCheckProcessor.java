@@ -42,7 +42,7 @@ public class FAPostCreditCheckProcessor {
             }
 
             logger.info(
-                    "Post Processing credit scores result for credit verification ID : " + creditApplicationId.toString());
+                    "CreditScore check has been completed from Credit Check agency : " + creditApplicationId.toString());
             SignedTransaction loanUpdateTx = proxy
                     .startTrackedFlowDynamic(LoanApplicationCreationFlow.class, creditApplicationId, scoreDesc)
                     .getReturnValue().get();

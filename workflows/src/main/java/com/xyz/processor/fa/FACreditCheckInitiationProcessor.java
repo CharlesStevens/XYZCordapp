@@ -19,7 +19,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.List;
-import java.util.concurrent.ExecutionException;
 
 public class FACreditCheckInitiationProcessor {
     private static final Logger logger = LoggerFactory.getLogger(FACreditCheckInitiationProcessor.class);
@@ -56,7 +55,7 @@ public class FACreditCheckInitiationProcessor {
                     + creditCheckApplicationId.toString() + ". Updating loan application status...");
 
             SignedTransaction loanUpdateTx = proxy.startTrackedFlowDynamic(LoanApplicationCreationFlow.class,
-                    LoanApplicationStatus.FORWARDED_TO_CREDIT_CHECK_AGENCY, loanApplicationId, creditCheckApplicationId).getReturnValue().get();
+                    loanApplicationId, creditCheckApplicationId).getReturnValue().get();
             LoanApplicationState laState = ((LoanApplicationState) loanUpdateTx.getTx().getOutputs().get(0).getData());
             logger.info("Updated Loan application ID: " + loanApplicationId.getId().toString() + " with status : " + LoanApplicationStatus.FORWARDED_TO_CREDIT_CHECK_AGENCY.toString());
             return "CreditCheck verification process initiated with VerificationID: " + creditCheckApplicationId.getId().toString();

@@ -29,6 +29,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import javax.annotation.PostConstruct;
 import java.util.*;
 
 import static org.springframework.http.MediaType.APPLICATION_JSON_VALUE;
@@ -43,15 +44,19 @@ public class CreditAgencyController {
     @Value("${disable.observers}")
     private boolean disableObservers;
 
-    public CreditAgencyController(NodeRPCConnection rpc) {
-        this.proxy = rpc.getproxy();
-        this.me = proxy.nodeInfo().getLegalIdentities().get(0).getName();
-
+    @PostConstruct
+    public void init() {
+        logger.info("Disable Observers property value : " + disableObservers);
         if (!disableObservers) {
             Thread creditObserverThread = new Thread(
                     () -> new CACreditScoreCheckStateObserver(proxy).observeCreditCheckApplication());
             creditObserverThread.start();
         }
+    }
+
+    public CreditAgencyController(NodeRPCConnection rpc) {
+        this.proxy = rpc.getproxy();
+        this.me = proxy.nodeInfo().getLegalIdentities().get(0).getName();
     }
 
     public String toDisplayString(X500Name name) {
